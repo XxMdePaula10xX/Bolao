@@ -16,7 +16,8 @@ App mobile para criar e gerenciar **bolões esportivos customizáveis** — púb
 6. [Passo 3 — Instalar e rodar o app](#-passo-3--instalar-e-rodar-o-app)
 7. [Passo 4 — Regras de segurança e índices](#-passo-4--regras-de-segurança-e-índices)
 8. [Passo 5 — Dados de exemplo (competição e jogos)](#-passo-5--dados-de-exemplo-competição-e-jogos)
-9. [Passo 6 — Cloud Functions (pontuação automática)](#-passo-6--cloud-functions-pontuação-automática)
+9. [Passo 5B — Dados REAIS da API esportiva](#-passo-5b--dados-reais-da-api-esportiva-football-dataorg)
+10. [Passo 6 — Cloud Functions (pontuação + sincronização)](#-passo-6--cloud-functions-pontuação-automática)
 10. [Testando o fluxo completo](#-testando-o-fluxo-completo)
 11. [Próximos passos do roadmap](#-próximos-passos-do-roadmap)
 12. [Perguntas frequentes / problemas comuns](#-perguntas-frequentes--problemas-comuns)
@@ -40,10 +41,11 @@ Rodando em **Expo SDK 54**. Já implementado:
 - **Notificações** in-app + push (Expo) quando há novo aviso no feed.
 - **Regulamento automático** gerado a partir das regras.
 - **Ranking geral** automático.
-- **Cloud Functions**: pontuação ao fim de cada jogo e envio de push no feed.
+- **Dados esportivos reais** (football-data.org): jogos, escudos, datas e **placares ao vivo**, com a tela atualizando sozinha.
+- **Cloud Functions**: pontuação ao fim de cada jogo, push no feed e sincronização da API esportiva.
 - **Regras de segurança** do Firestore e Storage por papel.
 
-O que **ainda não** está implementado (próximas fases): liga por rodadas detalhada, integração com API esportiva real ao vivo e pontuação automática da copa/longo prazo. A estrutura já está pronta para receber tudo isso.
+O que **ainda não** está implementado (próximas fases): liga por rodadas detalhada e pontuação automática da copa/longo prazo. A estrutura já está pronta para receber tudo isso.
 
 > **Sobre push no Expo Go:** a partir do SDK 53, notificações push **remotas** não funcionam mais no app Expo Go — só em um *development build* (EAS) ou no app publicado. No Expo Go você ainda recebe as **notificações in-app** (a lista do sino 🔔) e notificações **locais**. Para testar push de verdade, gere um development build com `npx expo run:android`/`run:ios` ou `eas build`.
 
@@ -173,12 +175,14 @@ As regras impedem que alguém leia/escreva dados que não deveria, e os índices
 
 ## 🌱 Passo 5 — Dados de exemplo (competição e jogos)
 
+> Você tem **duas opções** para ter jogos no app: (A) dados de exemplo, offline — bom para testar rápido; ou (B) **dados reais** de um campeonato de verdade, via API gratuita (Passo 5B abaixo). Pode começar pelo exemplo e depois trocar pelos dados reais.
+
 Para palpitar, o app precisa de uma competição e alguns jogos. Como esses dados só podem ser escritos pelo back-end (por segurança), usamos um script com permissão de administrador.
 
 1. No Console: ⚙️ **Configurações do projeto** → aba **Contas de serviço** → **Gerar nova chave privada**. Baixe o arquivo JSON.
 2. Renomeie/salve esse arquivo como **`serviceAccountKey.json`** na raiz do projeto.
    ⚠️ **Esse arquivo é secreto.** Já está no `.gitignore` — nunca suba para o GitHub.
-3. Instale a dependência usada pelo script e rode:
+3. Instale a dependência usada pelos scripts e rode:
    ```bash
    npm install firebase-admin
    node scripts/seed.mjs
@@ -187,9 +191,49 @@ Para palpitar, o app precisa de uma competição e alguns jogos. Como esses dado
 
 ---
 
+## 🌐 Passo 5B — Dados REAIS da API esportiva (football-data.org)
+
+Aqui o app passa a usar jogos, escudos, datas e **placares de verdade**, com atualização **ao vivo**. Usamos a **football-data.org** porque é gratuita (token sem cartão) e inclui o **Brasileirão Série A** no plano grátis.
+
+> **Como funciona (e por que é seguro):** a chave da API **nunca** vai para o app. Quem fala com a API é o back-end, que grava os jogos no Firestore. O app só **lê** do Firestore — e em tempo real, então o placar atualiza sozinho na tela. (PRD seções 16 e 23.)
+
+### 1. Pegue um token grátis
+- Registre-se em https://www.football-data.org/client/register
+- Você recebe um **token** por e-mail. Guarde-o.
+
+### 2. Jeito mais simples (sem plano Blaze): rodar o script
+Com o `serviceAccountKey.json` na raiz (mesmo do Passo 5), rode:
+```bash
+FOOTBALL_DATA_TOKEN=seu_token node scripts/sync-api.mjs BSA
+```
+- `BSA` = Brasileirão Série A. Outros códigos grátis: `PL` (Premier League), `PD` (La Liga), `SA` (Itália), `BL1` (Alemanha), `FL1` (França), `CL` (Champions), `PPL` (Portugal).
+- O script cria a competição real e todos os jogos da temporada no Firestore. Rode de novo quando quiser atualizar os placares.
+
+Agora, ao criar um bolão, a competição real aparece na lista do wizard. 🎉
+
+### 3. Atualização automática e ao vivo (opcional, exige Blaze)
+Para os placares atualizarem sozinhos a cada 15 minutos (sem rodar o script na mão), use a Cloud Function agendada:
+```bash
+# guarda o token como "secret" do Firebase (não fica no código)
+firebase functions:secrets:set FOOTBALL_DATA_TOKEN
+# digite o token quando pedir
+
+firebase deploy --only functions
+```
+- A função `scheduledSyncMatches` roda a cada 15 min e ressincroniza as competições listadas em `config/sync` (o script já adiciona o código lá automaticamente).
+- Quando um jogo termina, a função `onMatchFinished` recalcula a pontuação e os rankings sozinha.
+- Agendamento exige o plano **Blaze** e a API **Cloud Scheduler** ativa (o deploy avisa se faltar).
+
+> **Limite do plano grátis da API:** ~10 requisições por minuto. A sincronização a cada 15 min fica bem dentro disso.
+
+---
+
 ## 🧮 Passo 6 — Cloud Functions (pontuação automática)
 
-A função recalcula os pontos automaticamente quando um jogo termina.
+As Cloud Functions cuidam do que precisa rodar no servidor:
+- **`onMatchFinished`** — recalcula a pontuação e os rankings quando um jogo termina.
+- **`onFeedPostCreated`** — envia notificação (push + in-app) quando há aviso no feed.
+- **`scheduledSyncMatches`** + **`syncCompetitionNow`** — sincronizam os jogos reais da API esportiva (Passo 5B).
 
 1. Instale as dependências das functions:
    ```bash
@@ -197,7 +241,11 @@ A função recalcula os pontos automaticamente quando um jogo termina.
    npm install
    cd ..
    ```
-2. Faça o deploy:
+2. (Se for usar a API) guarde o token da API como secret:
+   ```bash
+   firebase functions:secrets:set FOOTBALL_DATA_TOKEN
+   ```
+3. Faça o deploy:
    ```bash
    firebase deploy --only functions
    ```

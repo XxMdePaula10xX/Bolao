@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   where,
   orderBy,
@@ -30,4 +31,27 @@ export async function listMatches(competitionId: string): Promise<Match[]> {
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => d.data() as Match);
+}
+
+/**
+ * Assina os jogos de uma competição EM TEMPO REAL (seção 23 do PRD).
+ * Sempre que a Cloud Function atualizar um placar/status no Firestore,
+ * o callback é chamado de novo — o app reflete o "ao vivo" sozinho.
+ * Devolve uma função para cancelar a assinatura.
+ */
+export function subscribeMatches(
+  competitionId: string,
+  onUpdate: (matches: Match[]) => void,
+  onError?: (e: Error) => void
+): () => void {
+  const q = query(
+    collection(db, 'matches'),
+    where('competitionId', '==', competitionId),
+    orderBy('startTime', 'asc')
+  );
+  return onSnapshot(
+    q,
+    (snap) => onUpdate(snap.docs.map((d) => d.data() as Match)),
+    (err) => onError?.(err)
+  );
 }

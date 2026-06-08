@@ -15,11 +15,14 @@ import {
 } from 'firebase-functions/v2/firestore';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
-import * as admin from 'firebase-admin';
+import { db, admin } from './firebaseAdmin';
 import { calculatePoints, isExactHit, ScoringRules } from './scoring';
 
-admin.initializeApp();
-const db = admin.firestore();
+// As funções de sincronização com a API esportiva ficam em ./sync.
+export {
+  syncCompetitionNow,
+  scheduledSyncMatches,
+} from './sync';
 
 /**
  * Gatilho: disparado sempre que um documento em /matches muda.

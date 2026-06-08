@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loading, EmptyState, Button, Card, Badge } from '@/components/ui';
-import { listMatches } from '@/services/firebase/matches';
+import { useRealtimeMatches } from '@/features/matches/useRealtimeMatches';
 import {
   listUserPredictions,
   submitPredictions,
@@ -19,10 +19,9 @@ import { colors, spacing, fontSize, fontWeight } from '@/theme';
  */
 export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string }) {
   const qc = useQueryClient();
-  const matches = useQuery({
-    queryKey: ['matches', pool.competitionId],
-    queryFn: () => listMatches(pool.competitionId),
-  });
+  // Jogos em tempo real: o placar atualiza sozinho conforme a API
+  // esportiva é sincronizada no Firestore.
+  const matches = useRealtimeMatches(pool.competitionId);
   const predictions = useQuery({
     queryKey: ['userPredictions', pool.id, userId],
     queryFn: () => listUserPredictions(pool.id, userId),
@@ -34,9 +33,9 @@ export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string })
 
   const matchesById = useMemo(() => {
     const map: Record<string, Match> = {};
-    (matches.data ?? []).forEach((m: Match) => (map[m.id] = m));
+    matches.matches.forEach((m: Match) => (map[m.id] = m));
     return map;
-  }, [matches.data]);
+  }, [matches.matches]);
 
   const savedByMatch = useMemo(() => {
     const map: Record<string, { home: number; away: number }> = {};
@@ -104,8 +103,8 @@ export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string })
     }
   }
 
-  if (matches.isLoading) return <Loading label="Carregando jogos..." />;
-  if (!matches.data || matches.data.length === 0) {
+  if (matches.loading) return <Loading label="Carregando jogos..." />;
+  if (matches.matches.length === 0) {
     return (
       <EmptyState
         icon="📅"
@@ -115,7 +114,7 @@ export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string })
     );
   }
 
-  const pendingCount = matches.data.filter(
+  const pendingCount = matches.matches.filter(
     (m: Match) => !isLocked(m) && !savedByMatch[m.id] && !drafts[m.id]?.home
   ).length;
 
@@ -129,14 +128,20 @@ export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string })
         </Card>
       ) : null}
 
-      {matches.data.map((m: Match) => {
+      {matches.matches.map((m: Match) => {
         const locked = isLocked(m);
         const saved = savedByMatch[m.id];
+        const isLive = m.status === 'live';
         return (
           <Card key={m.id} style={styles.matchCard}>
             <View style={styles.matchHeader}>
-              <Text style={styles.matchDate}>{formatMatchDate(m.startTime)}</Text>
-              {locked ? (
+              <Text style={styles.matchDate}>
+                {m.round ? `Rodada ${m.round} · ` : ''}
+                {formatMatchDate(m.startTime)}
+              </Text>
+              {isLive ? (
+                <Badge label="● AO VIVO" color={colors.error} />
+              ) : locked ? (
                 <Badge label="Fechado" color={colors.surfaceElevated} />
               ) : saved ? (
                 <Badge label="Palpitado" color={colors.success} />
@@ -146,9 +151,12 @@ export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string })
             </View>
 
             <View style={styles.matchRow}>
-              <Text style={styles.team} numberOfLines={1}>
-                {m.homeTeam.name}
-              </Text>
+              <View style={styles.teamSide}>
+                <TeamCrest uri={m.homeTeam.crestUrl} />
+                <Text style={styles.team} numberOfLines={1}>
+                  {m.homeTeam.shortName || m.homeTeam.name}
+                </Text>
+              </View>
               <View style={styles.scoreInputs}>
                 <ScoreBox
                   value={getValue(m.id, 'home')}
@@ -162,15 +170,18 @@ export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string })
                   editable={!locked}
                 />
               </View>
-              <Text style={[styles.team, styles.teamRight]} numberOfLines={1}>
-                {m.awayTeam.name}
-              </Text>
+              <View style={[styles.teamSide, styles.teamSideRight]}>
+                <Text style={[styles.team, styles.teamRight]} numberOfLines={1}>
+                  {m.awayTeam.shortName || m.awayTeam.name}
+                </Text>
+                <TeamCrest uri={m.awayTeam.crestUrl} />
+              </View>
             </View>
 
-            {/* Resultado real, se houver */}
+            {/* Placar real (atualiza ao vivo) */}
             {m.homeScore !== null && m.awayScore !== null ? (
-              <Text style={styles.realResult}>
-                Resultado: {m.homeScore} x {m.awayScore}
+              <Text style={[styles.realResult, isLive && styles.realResultLive]}>
+                {isLive ? 'Parcial' : 'Resultado'}: {m.homeScore} x {m.awayScore}
               </Text>
             ) : null}
           </Card>
@@ -180,6 +191,19 @@ export function PredictionsTab({ pool, userId }: { pool: Pool; userId: string })
       <Button title="Salvar palpites" onPress={handleSave} loading={saving} />
     </View>
   );
+}
+
+/**
+ * Escudo do time. O <Image> do React Native não renderiza SVG, e alguns
+ * escudos da API vêm em .svg — nesses casos mostramos um marcador neutro
+ * em vez de uma imagem quebrada.
+ */
+function TeamCrest({ uri }: { uri?: string | null }) {
+  const isImage = !!uri && !uri.toLowerCase().endsWith('.svg');
+  if (!isImage) {
+    return <View style={styles.crestPlaceholder} />;
+  }
+  return <Image source={{ uri: uri! }} style={styles.crest} resizeMode="contain" />;
 }
 
 function ScoreBox({
@@ -213,8 +237,19 @@ const styles = StyleSheet.create({
   matchHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   matchDate: { color: colors.textSecondary, fontSize: fontSize.xs },
   matchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  team: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  teamSide: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  teamSideRight: { justifyContent: 'flex-end' },
+  team: { flexShrink: 1, color: colors.textPrimary, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   teamRight: { textAlign: 'right' },
+  crest: { width: 24, height: 24 },
+  crestPlaceholder: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.greenDark,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   scoreInputs: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   x: { color: colors.textMuted, fontSize: fontSize.md, marginHorizontal: 2 },
   scoreBox: {
@@ -237,4 +272,5 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
   },
+  realResultLive: { color: colors.error, fontWeight: fontWeight.bold },
 });
