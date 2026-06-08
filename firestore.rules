@@ -28,6 +28,10 @@ service cloud.firestore {
     function isOwner(poolId) {
       return isSignedIn() && poolData(poolId).ownerId == request.auth.uid;
     }
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSystemAdmin == true;
+    }
 
     // -------- Usuários --------
     match /users/{uid} {
@@ -39,15 +43,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // -------- Competições e jogos (somente leitura no cliente) --------
-    // Escrita só via Cloud Functions / admin (sincronização externa).
+    // -------- Competições e jogos --------
+    // Qualquer logado lê. Escrita: admin do sistema (pelo painel do app)
+    // ou backend/Cloud Functions (que ignoram estas regras).
     match /competitions/{id} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
     match /matches/{id} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     // -------- Bolões --------

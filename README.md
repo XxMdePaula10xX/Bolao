@@ -177,7 +177,30 @@ firebase deploy --only firestore:rules,storage
 
 ---
 
-## 🌱 Passo 5 — Dados de exemplo (competição e jogos)
+## 👑 Passo 5 (recomendado) — Cadastrar competições pelo painel do admin
+
+Este é o jeito **mais fácil** de ter competições para criar bolões: tudo pelo app, sem token, sem script, sem plano pago.
+
+### Primeiro, vire admin (uma vez)
+1. No [Console do Firebase](https://console.firebase.google.com) → **Firestore Database** → coleção **users** → abra o **seu** documento (o id é o seu user; se tiver dúvida, é o que tem o seu e-mail).
+2. Clique em **Adicionar campo**: nome `isSystemAdmin`, tipo **boolean**, valor **true**. Salve.
+3. No app, **saia e entre de novo** (ou feche e reabra) para ele reconhecer o admin.
+
+### Depois, cadastre competições
+No app: **Perfil → Abrir painel do admin**. Lá você pode:
+- **Importar uma liga** (grátis, via TheSportsDB): toque em "Brasileirão Série A" (ou outra) e ele puxa os jogos recentes e próximos. Sem token, sem cadastro.
+- **Criar uma competição na mão** e **adicionar os jogos um a um** (time mandante, visitante, data) — para o que não estiver na fonte.
+- **Lançar o placar** de um jogo e **encerrar** — isso dispara o cálculo da pontuação dos bolões.
+
+> A importação traz ~30 jogos por liga (recentes + próximos), que é o suficiente para palpitar as rodadas. Se uma liga não vier, use o cadastro manual.
+
+Pronto: a competição passa a aparecer no **wizard de criar bolão**.
+
+> As alternativas abaixo (dados de exemplo, football-data.org) continuam válidas, mas o painel do admin costuma ser o caminho mais simples.
+
+---
+
+## 🌱 Passo 5-alt — Dados de exemplo (competição e jogos)
 
 > Você tem **duas opções** para ter jogos no app: (A) dados de exemplo, offline — bom para testar rápido; ou (B) **dados reais** de um campeonato de verdade, via API gratuita (Passo 5B abaixo). Pode começar pelo exemplo e depois trocar pelos dados reais.
 

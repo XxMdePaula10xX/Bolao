@@ -1,5 +1,6 @@
 import React from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Title, Card, Button, Avatar, Loading } from '@/components/ui';
 import { logout } from '@/services/firebase/auth';
@@ -9,6 +10,7 @@ import { Pool } from '@/types';
 import { colors, spacing, fontSize, fontWeight } from '@/theme';
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { profile } = useAuthStore();
   const pools = useQuery({
     queryKey: ['myPools', profile?.id],
@@ -55,6 +57,20 @@ export default function ProfileScreen() {
         </Text>
         <Button title="Sair da conta" variant="danger" onPress={confirmLogout} />
       </Card>
+
+      {profile.isSystemAdmin ? (
+        <Card style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+          <Text style={styles.sectionTitle}>⭐ Admin do sistema</Text>
+          <Text style={styles.muted}>
+            Cadastre competições e jogos (importe de uma liga ou adicione na mão).
+          </Text>
+          <Button
+            title="Abrir painel do admin"
+            variant="secondary"
+            onPress={() => router.push('/admin')}
+          />
+        </Card>
+      ) : null}
     </Screen>
   );
 }

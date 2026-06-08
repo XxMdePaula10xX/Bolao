@@ -153,8 +153,8 @@ export default function CreatePoolScreen() {
             ) : (
               <Card>
                 <Text style={styles.muted}>
-                  Nenhuma competição cadastrada ainda. Um admin precisa cadastrar
-                  competições no Firestore (veja o README, seção "Dados de exemplo").
+                  Nenhuma competição cadastrada ainda. Abra o Perfil → Painel do
+                  admin para importar uma liga (grátis) ou criar uma na mão.
                 </Text>
               </Card>
             )}
