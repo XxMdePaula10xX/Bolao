@@ -48,7 +48,6 @@ export async function registerForPushNotifications(): Promise<string | null> {
   try {
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ??
-      // @ts-expect-error easConfig existe em runtime
       Constants.easConfig?.projectId;
     const token = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined
