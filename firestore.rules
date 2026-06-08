@@ -1,0 +1,116 @@
+rules_version = '2';
+
+// ============================================================
+// Regras de segurança do Firestore — Bolão Flex (PRD seção 24)
+// ------------------------------------------------------------
+// Princípios:
+//  - cálculos sensíveis (pontuação, rankings) só mudam via
+//    Cloud Functions (Admin SDK ignora estas regras);
+//  - palpites são imutáveis após o início do jogo;
+//  - só membros veem bolões privados.
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isUser(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    function isMember(poolId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/poolMembers/$(poolId + '_' + request.auth.uid));
+    }
+    function poolData(poolId) {
+      return get(/databases/$(database)/documents/pools/$(poolId)).data;
+    }
+    function isOwner(poolId) {
+      return isSignedIn() && poolData(poolId).ownerId == request.auth.uid;
+    }
+
+    // -------- Usuários --------
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isUser(uid);
+      // O usuário edita o próprio perfil, mas não os campos de stats
+      // (esses são atualizados pelo backend / batches controlados).
+      allow update: if isUser(uid);
+      allow delete: if false;
+    }
+
+    // -------- Competições e jogos (somente leitura no cliente) --------
+    // Escrita só via Cloud Functions / admin (sincronização externa).
+    match /competitions/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /matches/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // -------- Bolões --------
+    match /pools/{poolId} {
+      // Bolões públicos: qualquer logado lê. Privados: só membros/dono.
+      allow read: if isSignedIn() &&
+        (resource.data.isPublic == true || isMember(poolId) ||
+         resource.data.ownerId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
+
+      // Dono pode editar config geral (memberCount é ajustado em batch).
+      allow update: if isOwner(poolId);
+      allow delete: if isOwner(poolId);
+    }
+
+    // -------- Membros do bolão --------
+    match /poolMembers/{memberId} {
+      allow read: if isSignedIn();
+      // O próprio usuário cria seu vínculo (entrar no bolão).
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      // Sair do bolão (atualizar status) — só o próprio.
+      allow update: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // -------- Palpites --------
+    match /predictions/{predId} {
+      allow read: if isMember(resource.data.poolId);
+      // Só o dono do palpite cria/edita, e o palpite não pode já estar travado.
+      allow create, update: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        isMember(request.resource.data.poolId);
+      allow delete: if false; // palpites não são apagados
+    }
+
+    // -------- Palpites de longo prazo --------
+    match /longTermPredictions/{id} {
+      allow read: if isMember(resource.data.poolId);
+      allow create, update: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // -------- Snapshots e brackets (gerados pelo backend) --------
+    match /standingsSnapshots/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /knockoutBrackets/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // -------- Notificações --------
+    match /notifications/{id} {
+      allow read, update: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+      allow create, delete: if false;
+    }
+  }
+}
