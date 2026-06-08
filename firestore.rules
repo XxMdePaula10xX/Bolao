@@ -52,9 +52,11 @@ service cloud.firestore {
 
     // -------- Bolões --------
     match /pools/{poolId} {
-      // Bolões públicos: qualquer logado lê. Privados: só membros/dono.
+      // Públicos e oficiais: qualquer logado lê. Privados: só membros/dono.
       allow read: if isSignedIn() &&
-        (resource.data.isPublic == true || isMember(poolId) ||
+        (resource.data.isPublic == true ||
+         resource.data.createdByAdmin == true ||
+         isMember(poolId) ||
          resource.data.ownerId == request.auth.uid);
 
       allow create: if isSignedIn() &&
