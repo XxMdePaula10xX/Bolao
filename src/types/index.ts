@@ -20,6 +20,8 @@ export interface UserProfile {
   avatarUrl?: string | null;
   createdAt: FireDate;
   isSystemAdmin?: boolean;
+  /** Token do Expo para notificações push (preenchido no login). */
+  expoPushToken?: string | null;
   stats?: {
     poolsCreated?: number;
     poolsJoined?: number;
@@ -177,15 +179,65 @@ export interface Prediction {
 }
 
 export interface LongTermPrediction {
-  id: string;
+  id: string; // `${poolId}_${userId}`
   poolId: string;
   userId: string;
+  userName?: string;
+  // Campeão e vice são escolhidos entre os times reais da competição.
   championTeamId?: string | null;
+  championTeamName?: string | null;
   runnerUpTeamId?: string | null;
-  topScorerPlayerId?: string | null;
-  bestPlayerId?: string | null;
-  assistLeaderPlayerId?: string | null;
+  runnerUpTeamName?: string | null;
+  // Mercados de pessoas ficam como texto livre (ainda não temos base
+  // de jogadores). Viram seletores quando houver coleção de players.
+  topScorerName?: string | null;
+  bestPlayerName?: string | null;
   submittedAt: FireDate;
+}
+
+// ---------------------------------------------------------------------------
+// Copa / chaveamento (mata-mata entre participantes)
+// ---------------------------------------------------------------------------
+export type TournamentType = 'cup' | 'losersCup';
+
+export interface KnockoutBracket {
+  id: string; // `${poolId}_${tournamentType}`
+  poolId: string;
+  tournamentType: TournamentType;
+  seedSource: 'leagueStanding' | 'random';
+  generatedBy: string;
+  generatedAt: FireDate;
+  // Estrutura do chaveamento (ver src/lib/bracket.ts).
+  rounds: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Feed do bolão (mural)
+// ---------------------------------------------------------------------------
+export type FeedPostType = 'post' | 'system';
+
+export interface FeedPost {
+  id: string;
+  poolId: string;
+  authorId: string;
+  authorName: string;
+  type: FeedPostType;
+  text: string;
+  createdAt: FireDate;
+}
+
+// ---------------------------------------------------------------------------
+// Notificações in-app
+// ---------------------------------------------------------------------------
+export interface AppNotification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  body: string;
+  read: boolean;
+  poolId?: string | null;
+  createdAt: FireDate;
 }
 
 // ---------------------------------------------------------------------------

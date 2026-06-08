@@ -25,21 +25,27 @@ App mobile para criar e gerenciar **bolões esportivos customizáveis** — púb
 
 ## ✅ O que já está pronto
 
-Esta primeira entrega cobre o **MVP 1** do PRD:
+Rodando em **Expo SDK 54**. Já implementado:
 
 - **Autenticação** por e-mail/senha (cadastro, login, recuperar senha).
-- **Home** com seus bolões, atalhos e bolões oficiais.
+- **Home** com seus bolões, atalhos, bolões oficiais e sino de notificações.
 - **Explorar** bolões públicos (com busca).
 - **Criar bolão** via wizard guiado (templates, módulos, pontuação).
 - **Convite por código** (entrar em bolão privado).
-- **Tela do bolão** com abas: Visão geral, Jogos/Palpites, Ranking, Regras, Membros.
+- **Tela do bolão** com abas dinâmicas: Visão geral, Jogos/Palpites, Ranking, **Copa**, **Copa dos Ruins**, **Longo prazo**, **Feed**, Regras, Membros.
 - **Palpites jogo a jogo** com trava após o início do jogo.
+- **Copa / chaveamento visual** (mata-mata entre participantes, com seed por classificação, byes e avanço de fases).
+- **Palpites de longo prazo** (campeão, vice, artilheiro, craque).
+- **Feed do bolão** (mural de avisos do organizador).
+- **Notificações** in-app + push (Expo) quando há novo aviso no feed.
 - **Regulamento automático** gerado a partir das regras.
 - **Ranking geral** automático.
-- **Cloud Function** que calcula a pontuação quando um jogo termina.
+- **Cloud Functions**: pontuação ao fim de cada jogo e envio de push no feed.
 - **Regras de segurança** do Firestore e Storage por papel.
 
-O que **ainda não** está implementado (próximas fases): copa/mata-mata visual, longo prazo, feed, notificações push, integração com API esportiva real ao vivo. A estrutura já está pronta para receber tudo isso.
+O que **ainda não** está implementado (próximas fases): liga por rodadas detalhada, integração com API esportiva real ao vivo e pontuação automática da copa/longo prazo. A estrutura já está pronta para receber tudo isso.
+
+> **Sobre push no Expo Go:** a partir do SDK 53, notificações push **remotas** não funcionam mais no app Expo Go — só em um *development build* (EAS) ou no app publicado. No Expo Go você ainda recebe as **notificações in-app** (a lista do sino 🔔) e notificações **locais**. Para testar push de verdade, gere um development build com `npx expo run:android`/`run:ios` ou `eas build`.
 
 ---
 

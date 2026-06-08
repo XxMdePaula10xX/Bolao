@@ -34,9 +34,14 @@ export default function HomeScreen() {
           <Text style={styles.greeting}>Olá,</Text>
           <Title>{profile?.name?.split(' ')[0] ?? 'Palpiteiro'} 👋</Title>
         </View>
-        <Pressable style={styles.createBtn} onPress={() => router.push('/create-pool')}>
-          <Ionicons name="add" size={22} color={colors.grayDark} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable style={styles.bellBtn} onPress={() => router.push('/notifications')}>
+            <Ionicons name="notifications" size={22} color={colors.gold} />
+          </Pressable>
+          <Pressable style={styles.createBtn} onPress={() => router.push('/create-pool')}>
+            <Ionicons name="add" size={22} color={colors.grayDark} />
+          </Pressable>
+        </View>
       </View>
 
       {/* Atalhos rápidos */}
@@ -126,6 +131,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   greeting: { color: colors.textSecondary, fontSize: fontSize.md },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  bellBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   createBtn: {
     width: 44,
     height: 44,

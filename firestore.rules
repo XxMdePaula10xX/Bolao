@@ -96,17 +96,33 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // -------- Snapshots e brackets (gerados pelo backend) --------
+    // -------- Snapshots (gerados pelo backend) --------
     match /standingsSnapshots/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }
+
+    // -------- Chaveamentos (copa) --------
+    // Membros leem; só o dono do bolão gera/edita o chaveamento.
     match /knockoutBrackets/{id} {
-      allow read: if isSignedIn();
-      allow write: if false;
+      allow read: if isMember(resource.data.poolId);
+      allow create, update: if isSignedIn() &&
+        isOwner(request.resource.data.poolId);
+      allow delete: if isSignedIn() && isOwner(resource.data.poolId);
+    }
+
+    // -------- Feed do bolão (mural) --------
+    match /feedPosts/{id} {
+      allow read: if isMember(resource.data.poolId);
+      // Só o dono do bolão publica avisos.
+      allow create: if isSignedIn() &&
+        request.resource.data.authorId == request.auth.uid &&
+        isOwner(request.resource.data.poolId);
+      allow update, delete: if isSignedIn() && isOwner(resource.data.poolId);
     }
 
     // -------- Notificações --------
+    // O backend cria; o usuário lê e marca como lida.
     match /notifications/{id} {
       allow read, update: if isSignedIn() &&
         resource.data.userId == request.auth.uid;

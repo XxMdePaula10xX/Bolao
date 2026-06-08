@@ -9,7 +9,10 @@
  * Isto centraliza o cálculo no servidor (PRD seção 24), garantindo
  * que ninguém consiga forjar pontos pelo app.
  */
-import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import {
+  onDocumentWritten,
+  onDocumentCreated,
+} from 'firebase-functions/v2/firestore';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
@@ -146,4 +149,94 @@ async function scoreMatch(matchId: string, homeScore: number, awayScore: number)
   logger.info(
     `Jogo ${matchId}: ${predsSnap.size} palpites pontuados, ${memberDeltas.size} membros atualizados.`
   );
+}
+
+// ===========================================================================
+// NOTIFICAÇÕES
+// ===========================================================================
+
+/**
+ * Quando um aviso é publicado no feed de um bolão, notificamos todos os
+ * membros: criamos uma notificação in-app e enviamos um push (Expo).
+ *
+ * OBS: push remoto só chega em "development build" ou no app publicado —
+ * no Expo Go (SDK 53+) ele não funciona, mas a notificação in-app sim.
+ */
+export const onFeedPostCreated = onDocumentCreated('feedPosts/{postId}', async (event) => {
+  const post = event.data?.data();
+  if (!post) return;
+
+  const poolSnap = await db.doc(`pools/${post.poolId}`).get();
+  const poolName = poolSnap.data()?.name ?? 'seu bolão';
+
+  // Busca os membros ativos do bolão.
+  const membersSnap = await db
+    .collection('poolMembers')
+    .where('poolId', '==', post.poolId)
+    .where('status', '==', 'active')
+    .get();
+
+  const title = `📢 ${poolName}`;
+  const body = post.text?.slice(0, 140) ?? 'Novo aviso no bolão';
+
+  const batch = db.batch();
+  const pushTokens: string[] = [];
+
+  for (const memberDoc of membersSnap.docs) {
+    const userId = memberDoc.data().userId as string;
+    if (userId === post.authorId) continue; // não notifica o autor
+
+    // Notificação in-app
+    const notifRef = db.collection('notifications').doc();
+    batch.set(notifRef, {
+      id: notifRef.id,
+      userId,
+      type: 'feed_post',
+      title,
+      body,
+      read: false,
+      poolId: post.poolId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Token de push do usuário
+    const userSnap = await db.doc(`users/${userId}`).get();
+    const token = userSnap.data()?.expoPushToken as string | undefined;
+    if (token) pushTokens.push(token);
+  }
+
+  await batch.commit();
+  await sendExpoPush(pushTokens, title, body, { poolId: post.poolId });
+  logger.info(`Feed ${post.poolId}: ${membersSnap.size} membros notificados.`);
+});
+
+/**
+ * Envia notificações push pela API do Expo. Aceita uma lista de tokens
+ * e quebra em lotes de 100 (limite recomendado pela Expo).
+ */
+async function sendExpoPush(
+  tokens: string[],
+  title: string,
+  body: string,
+  data: Record<string, unknown> = {}
+): Promise<void> {
+  const valid = tokens.filter((t) => t && t.startsWith('ExponentPushToken'));
+  if (valid.length === 0) return;
+
+  for (let i = 0; i < valid.length; i += 100) {
+    const chunk = valid.slice(i, i + 100);
+    const messages = chunk.map((to) => ({ to, sound: 'default', title, body, data }));
+    try {
+      await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messages),
+      });
+    } catch (e) {
+      logger.error('Falha ao enviar push', e);
+    }
+  }
 }

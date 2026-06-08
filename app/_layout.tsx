@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 import { queryClient } from '@/services/queryClient';
 import { useAuthStore } from '@/store/authStore';
+import { usePushRegistration } from '@/lib/notifications';
 import { Loading } from '@/components/ui';
 import { colors } from '@/theme';
 
@@ -33,12 +34,15 @@ function useAuthGuard() {
 }
 
 function RootNavigator() {
-  const { initializing, subscribe } = useAuthStore();
+  const { initializing, subscribe, profile } = useAuthStore();
 
   useEffect(() => {
     const unsub = subscribe();
     return unsub;
   }, []);
+
+  // Registra o token de push assim que houver um usuário logado.
+  usePushRegistration(profile?.id);
 
   useEffect(() => {
     if (!initializing) SplashScreen.hideAsync().catch(() => {});
@@ -67,6 +71,10 @@ function RootNavigator() {
         options={{ presentation: 'modal', headerShown: false }}
       />
       <Stack.Screen name="join" options={{ presentation: 'modal', headerShown: false }} />
+      <Stack.Screen
+        name="notifications"
+        options={{ presentation: 'modal', headerShown: false }}
+      />
     </Stack>
   );
 }

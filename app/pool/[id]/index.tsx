@@ -16,20 +16,46 @@ import { Loading, Card, Badge, EmptyState, Avatar } from '@/components/ui';
 import { getPool, listPoolMembers } from '@/services/firebase/pools';
 import { RankingTable } from '@/features/standings/RankingTable';
 import { PredictionsTab } from '@/features/predictions/PredictionsTab';
+import { CupTab } from '@/features/brackets/CupTab';
+import { LongTermTab } from '@/features/longterm/LongTermTab';
+import { FeedTab } from '@/features/feed/FeedTab';
 import { buildRegulation, statusLabel, statusColor } from '@/features/pools/regulation';
 import { useAuthStore } from '@/store/authStore';
 import { Pool, PoolMember } from '@/types';
 import { colors, spacing, fontSize, fontWeight, radius } from '@/theme';
 
-type TabKey = 'overview' | 'rules' | 'matches' | 'ranking' | 'members';
+type IconName = keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
+type TabKey =
+  | 'overview'
+  | 'matches'
+  | 'ranking'
+  | 'cup'
+  | 'losersCup'
+  | 'longterm'
+  | 'feed'
+  | 'rules'
+  | 'members';
 
-const TABS: { key: TabKey; label: string; icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap }[] = [
-  { key: 'overview', label: 'Visão geral', icon: 'grid' },
-  { key: 'matches', label: 'Jogos', icon: 'football' },
-  { key: 'ranking', label: 'Ranking', icon: 'podium' },
-  { key: 'rules', label: 'Regras', icon: 'document-text' },
-  { key: 'members', label: 'Membros', icon: 'people' },
-];
+/**
+ * Monta a lista de abas conforme os módulos ativados nas regras do
+ * bolão (Copa, Copa dos Ruins e Longo prazo aparecem só se ligados).
+ */
+function buildTabs(pool: Pool): { key: TabKey; label: string; icon: IconName }[] {
+  const tabs: { key: TabKey; label: string; icon: IconName }[] = [
+    { key: 'overview', label: 'Visão geral', icon: 'grid' },
+    { key: 'matches', label: 'Jogos', icon: 'football' },
+    { key: 'ranking', label: 'Ranking', icon: 'podium' },
+  ];
+  const m = pool.settings.modules;
+  if (m.cup) tabs.push({ key: 'cup', label: 'Copa', icon: 'trophy' });
+  if (m.losersCup) tabs.push({ key: 'losersCup', label: 'Copa dos Ruins', icon: 'sad' });
+  if (m.longTermPredictions)
+    tabs.push({ key: 'longterm', label: 'Longo prazo', icon: 'sparkles' });
+  tabs.push({ key: 'feed', label: 'Feed', icon: 'chatbubbles' });
+  tabs.push({ key: 'rules', label: 'Regras', icon: 'document-text' });
+  tabs.push({ key: 'members', label: 'Membros', icon: 'people' });
+  return tabs;
+}
 
 export default function PoolDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -72,7 +98,7 @@ export default function PoolDetailScreen() {
       {/* Abas horizontais */}
       <View style={styles.tabsWrap}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-          {TABS.map((t) => (
+          {buildTabs(p).map((t) => (
             <Pressable
               key={t.key}
               onPress={() => setTab(t.key)}
@@ -100,6 +126,14 @@ export default function PoolDetailScreen() {
             <Loading />
           ))}
         {tab === 'ranking' && <RankingTable poolId={p.id} currentUserId={profile?.id} />}
+        {tab === 'cup' &&
+          (profile ? <CupTab pool={p} user={profile} type="cup" /> : <Loading />)}
+        {tab === 'losersCup' &&
+          (profile ? <CupTab pool={p} user={profile} type="losersCup" /> : <Loading />)}
+        {tab === 'longterm' &&
+          (profile ? <LongTermTab pool={p} user={profile} /> : <Loading />)}
+        {tab === 'feed' &&
+          (profile ? <FeedTab pool={p} user={profile} /> : <Loading />)}
         {tab === 'rules' && <RegulationTab pool={p} />}
         {tab === 'members' && <MembersTab poolId={p.id} ownerId={p.ownerId} />}
       </ScrollView>
