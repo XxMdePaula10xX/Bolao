@@ -296,6 +296,19 @@ O Firestore às vezes pede para criar um índice. O erro no console traz um **li
 **Erro de versão ao instalar.**
 Rode `npx expo install --fix`, que acerta as versões para o seu Expo.
 
+**`Cannot find module 'babel-preset-expo'` ao rodar `npx expo start`.**
+A árvore de dependências ficou inconsistente. Resolva assim (na pasta do projeto):
+```bash
+# Windows (PowerShell):
+Remove-Item -Recurse -Force node_modules, package-lock.json
+npm install
+
+# Mac/Linux:
+rm -rf node_modules package-lock.json
+npm install
+```
+Depois rode `npx expo start -c` de novo. (Atalho, se não quiser apagar tudo: `npm install babel-preset-expo`.)
+
 **Quero mudar as cores/identidade.**
 Edite `src/theme/colors.ts`. Tudo no app puxa as cores de lá.
 

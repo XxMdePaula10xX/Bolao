@@ -2,6 +2,11 @@
 node_modules/
 functions/node_modules/
 
+# package-lock é gerado localmente no seu computador (npm install).
+# Mantido fora do Git para evitar árvores de dependência inconsistentes.
+package-lock.json
+functions/package-lock.json
+
 # Expo
 .expo/
 dist/
