@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { firebaseAuth } from '@/services/firebase/config';
-import { fetchUserProfile } from '@/services/firebase/auth';
+import { ensureUserProfile } from '@/services/firebase/auth';
 import { UserProfile } from '@/types';
 
 interface AuthState {
@@ -26,8 +26,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   subscribe: () => {
     const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
       if (user) {
-        const profile = await fetchUserProfile(user.uid);
-        set({ firebaseUser: user, profile, initializing: false });
+        try {
+          // ensureUserProfile cria o perfil caso ele não exista (auto-cura).
+          const profile = await ensureUserProfile(user);
+          set({ firebaseUser: user, profile, initializing: false });
+        } catch {
+          // Se o Firestore falhar (ex.: regras ainda não publicadas),
+          // ao menos não deixa o app travado na tela de carregamento.
+          set({ firebaseUser: user, profile: null, initializing: false });
+        }
       } else {
         set({ firebaseUser: null, profile: null, initializing: false });
       }

@@ -53,6 +53,30 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
 }
 
 /**
+ * Garante que o usuário autenticado tenha um documento de perfil.
+ * Se o perfil não existir (ex.: o cadastro foi feito antes de as regras
+ * do Firestore serem publicadas, então a gravação falhou), cria um
+ * perfil mínimo a partir dos dados da conta. Isso "auto-cura" contas
+ * que ficaram sem perfil e evita o login em looping.
+ */
+export async function ensureUserProfile(user: User): Promise<UserProfile> {
+  const existing = await fetchUserProfile(user.uid);
+  if (existing) return existing;
+
+  const profile: Omit<UserProfile, 'createdAt'> & { createdAt: unknown } = {
+    id: user.uid,
+    name: user.displayName ?? user.email?.split('@')[0] ?? 'Palpiteiro',
+    email: user.email ?? '',
+    avatarUrl: null,
+    createdAt: serverTimestamp(),
+    isSystemAdmin: false,
+    stats: { poolsCreated: 0, poolsJoined: 0, totalPoints: 0 },
+  };
+  await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
+  return (await fetchUserProfile(user.uid)) ?? (profile as UserProfile);
+}
+
+/**
  * Traduz códigos de erro do Firebase Auth para mensagens em português.
  * Sem isso, o usuário veria algo como "auth/invalid-credential".
  */
