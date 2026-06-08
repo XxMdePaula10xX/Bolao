@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,6 +65,10 @@ export default function CreatePoolScreen() {
     } catch (e) {
       console.error(e);
       setSaving(false);
+      Alert.alert(
+        'Não foi possível criar o bolão',
+        'Verifique sua conexão e se as regras do Firestore foram publicadas. Tente novamente.'
+      );
     }
   }
 
@@ -80,7 +84,11 @@ export default function CreatePoolScreen() {
       </View>
       <Stepper step={step} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* PASSO 1 - Básico */}
         {step === 0 && (
           <View>

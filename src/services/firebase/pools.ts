@@ -6,7 +6,6 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   limit,
   serverTimestamp,
   writeBatch,
@@ -14,7 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './config';
 import { Pool, PoolMember, PoolSettings, UserProfile } from '@/types';
-import { slugify, generateInviteCode } from '@/lib/utils';
+import { slugify, generateInviteCode, toDate } from '@/lib/utils';
 
 const poolsCol = collection(db, 'pools');
 
@@ -81,9 +80,13 @@ export async function createPool(
   const batch = writeBatch(db);
   batch.set(poolRef, pool);
   batch.set(memberRef, member);
-  batch.update(doc(db, 'users', owner.id), {
-    'stats.poolsCreated': increment(1),
-  });
+  // set+merge em vez de update: não falha se o doc do usuário ainda
+  // não tiver o campo stats.
+  batch.set(
+    doc(db, 'users', owner.id),
+    { stats: { poolsCreated: increment(1) } },
+    { merge: true }
+  );
   await batch.commit();
 
   return pool;
@@ -94,28 +97,25 @@ export async function getPool(poolId: string): Promise<Pool | null> {
   return snap.exists() ? (snap.data() as Pool) : null;
 }
 
+/** Ordena bolões do mais novo para o mais antigo (feito no app). */
+function sortByCreatedDesc(pools: Pool[]): Pool[] {
+  return pools.sort(
+    (a, b) => (toDate(b.createdAt)?.getTime() ?? 0) - (toDate(a.createdAt)?.getTime() ?? 0)
+  );
+}
+
 /** Bolões públicos para a aba Explorar (RF-10 / seção 6.2). */
 export async function listPublicPools(): Promise<Pool[]> {
-  const q = query(
-    poolsCol,
-    where('isPublic', '==', true),
-    orderBy('createdAt', 'desc'),
-    limit(50)
-  );
+  const q = query(poolsCol, where('isPublic', '==', true), limit(50));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as Pool);
+  return sortByCreatedDesc(snap.docs.map((d) => d.data() as Pool));
 }
 
 /** Bolões oficiais criados pelo admin do sistema. */
 export async function listOfficialPools(): Promise<Pool[]> {
-  const q = query(
-    poolsCol,
-    where('createdByAdmin', '==', true),
-    orderBy('createdAt', 'desc'),
-    limit(20)
-  );
+  const q = query(poolsCol, where('createdByAdmin', '==', true), limit(20));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as Pool);
+  return sortByCreatedDesc(snap.docs.map((d) => d.data() as Pool));
 }
 
 /** Bolões em que o usuário participa (aba Meus Bolões). */
@@ -129,15 +129,10 @@ export async function listMyPools(userId: string): Promise<Pool[]> {
   const poolIds = memberSnap.docs.map((d) => (d.data() as PoolMember).poolId);
   if (poolIds.length === 0) return [];
 
-  // Firestore limita "in" a 30 itens por consulta; buscamos em lotes.
-  const pools: Pool[] = [];
-  for (let i = 0; i < poolIds.length; i += 30) {
-    const chunk = poolIds.slice(i, i + 30);
-    const q = query(poolsCol, where('__name__', 'in', chunk));
-    const snap = await getDocs(q);
-    snap.docs.forEach((d) => pools.push(d.data() as Pool));
-  }
-  return pools;
+  // Busca cada bolão por ID (em paralelo). Simples e à prova de
+  // problemas de índice; o usuário costuma estar em poucos bolões.
+  const results = await Promise.all(poolIds.map((id) => getDoc(doc(db, 'pools', id))));
+  return results.filter((s) => s.exists()).map((s) => s.data() as Pool);
 }
 
 export async function findPoolByInviteCode(code: string): Promise<Pool | null> {
@@ -170,8 +165,14 @@ export async function joinPool(pool: Pool, user: UserProfile): Promise<void> {
 
   const batch = writeBatch(db);
   batch.set(memberRef, member);
+  // Só o campo memberCount muda no bolão (as regras permitem isso a
+  // qualquer membro entrando; ver firestore.rules).
   batch.update(doc(db, 'pools', pool.id), { memberCount: increment(1) });
-  batch.update(doc(db, 'users', user.id), { 'stats.poolsJoined': increment(1) });
+  batch.set(
+    doc(db, 'users', user.id),
+    { stats: { poolsJoined: increment(1) } },
+    { merge: true }
+  );
   await batch.commit();
 }
 

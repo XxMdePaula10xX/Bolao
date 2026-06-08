@@ -63,10 +63,6 @@ function RootNavigator() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(app)" />
       <Stack.Screen
-        name="pool/[id]/index"
-        options={{ headerShown: false, presentation: 'card' }}
-      />
-      <Stack.Screen
         name="create-pool"
         options={{ presentation: 'modal', headerShown: false }}
       />

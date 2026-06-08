@@ -155,21 +155,25 @@ O Firebase é o "servidor" do app (banco de dados, login, etc.). É gratuito par
 
 ---
 
-## 🔐 Passo 4 — Regras de segurança e índices
+## 🔐 Passo 4 — Regras de segurança (OBRIGATÓRIO)
 
-As regras impedem que alguém leia/escreva dados que não deveria, e os índices fazem as listas carregarem rápido.
+As regras impedem que alguém leia/escreva dados que não deveria. **Sem publicá-las, o app dá o erro "Missing or insufficient permissions"** (o banco em modo de produção bloqueia tudo por padrão).
 
-1. Faça login na CLI e selecione o projeto:
-   ```bash
-   firebase login
-   firebase use --add        # escolha o projeto bolao-flex
-   ```
-2. Publique as regras e índices:
-   ```bash
-   firebase deploy --only firestore:rules,firestore:indexes,storage
-   ```
+> O app foi feito para **não exigir índices compostos** — então você só precisa publicar as **regras**. Os índices são opcionais.
 
-> Se preferir não usar a CLI agora, você pode colar o conteúdo de `firestore.rules` direto no Console (Firestore → aba *Regras*). Mas a CLI é o jeito recomendado.
+**Jeito A — pelo site (mais simples):**
+1. [Console do Firebase](https://console.firebase.google.com) → **Firestore Database** → aba **Regras**.
+2. Apague o conteúdo e **cole todo o arquivo `firestore.rules`** do projeto.
+3. Clique em **Publicar**.
+
+**Jeito B — pela CLI (também publica Storage e índices):**
+```bash
+firebase login
+firebase use --add        # escolha o projeto bolao-flex
+firebase deploy --only firestore:rules,storage
+```
+
+> Sempre que eu atualizar o `firestore.rules`, você precisa **publicar de novo** (repita este passo).
 
 ---
 

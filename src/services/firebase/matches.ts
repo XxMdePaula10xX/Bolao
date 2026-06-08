@@ -6,10 +6,17 @@ import {
   onSnapshot,
   query,
   where,
-  orderBy,
 } from 'firebase/firestore';
 import { db } from './config';
 import { Competition, Match } from '@/types';
+import { toDate } from '@/lib/utils';
+
+/** Ordena jogos por data de início (mais cedo primeiro). */
+function sortByStart(matches: Match[]): Match[] {
+  return matches.sort(
+    (a, b) => (toDate(a.startTime)?.getTime() ?? 0) - (toDate(b.startTime)?.getTime() ?? 0)
+  );
+}
 
 /** Catálogo de competições reais cadastradas pelo admin (RF-04). */
 export async function listCompetitions(): Promise<Competition[]> {
@@ -22,15 +29,14 @@ export async function getCompetition(id: string): Promise<Competition | null> {
   return snap.exists() ? (snap.data() as Competition) : null;
 }
 
-/** Jogos de uma competição, ordenados por data (seção 6.6). */
+/**
+ * Jogos de uma competição (seção 6.6). A ordenação é feita no app
+ * (não no servidor) para não exigir a criação de índices compostos.
+ */
 export async function listMatches(competitionId: string): Promise<Match[]> {
-  const q = query(
-    collection(db, 'matches'),
-    where('competitionId', '==', competitionId),
-    orderBy('startTime', 'asc')
-  );
+  const q = query(collection(db, 'matches'), where('competitionId', '==', competitionId));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as Match);
+  return sortByStart(snap.docs.map((d) => d.data() as Match));
 }
 
 /**
@@ -44,14 +50,10 @@ export function subscribeMatches(
   onUpdate: (matches: Match[]) => void,
   onError?: (e: Error) => void
 ): () => void {
-  const q = query(
-    collection(db, 'matches'),
-    where('competitionId', '==', competitionId),
-    orderBy('startTime', 'asc')
-  );
+  const q = query(collection(db, 'matches'), where('competitionId', '==', competitionId));
   return onSnapshot(
     q,
-    (snap) => onUpdate(snap.docs.map((d) => d.data() as Match)),
+    (snap) => onUpdate(sortByStart(snap.docs.map((d) => d.data() as Match))),
     (err) => onError?.(err)
   );
 }

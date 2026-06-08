@@ -117,7 +117,11 @@ export default function PoolDetailScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {tab === 'overview' && <OverviewTab pool={p} onShare={shareInvite} />}
         {tab === 'matches' &&
           (profile ? (

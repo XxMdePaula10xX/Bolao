@@ -52,18 +52,22 @@ service cloud.firestore {
 
     // -------- Bolões --------
     match /pools/{poolId} {
-      // Públicos e oficiais: qualquer logado lê. Privados: só membros/dono.
-      allow read: if isSignedIn() &&
-        (resource.data.isPublic == true ||
-         resource.data.createdByAdmin == true ||
-         isMember(poolId) ||
-         resource.data.ownerId == request.auth.uid);
+      // Qualquer usuário logado pode LER o documento do bolão. Isso é
+      // necessário para entrar por código de convite (achar o bolão
+      // antes de ser membro) e para listar públicos/oficiais. Os dados
+      // sensíveis (palpites) continuam protegidos por regras próprias,
+      // e só o dono pode EDITAR o bolão (abaixo).
+      allow read: if isSignedIn();
 
       allow create: if isSignedIn() &&
         request.resource.data.ownerId == request.auth.uid;
 
-      // Dono pode editar config geral (memberCount é ajustado em batch).
-      allow update: if isOwner(poolId);
+      // O dono pode editar a configuração geral. Além disso, qualquer
+      // usuário logado pode alterar SOMENTE o memberCount (ao entrar/sair
+      // do bolão) — nada além desse campo.
+      allow update: if isOwner(poolId) ||
+        (isSignedIn() &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount']));
       allow delete: if isOwner(poolId);
     }
 
