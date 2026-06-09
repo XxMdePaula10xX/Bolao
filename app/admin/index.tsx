@@ -7,9 +7,11 @@ import { Card, Button, Input, Loading, EmptyState } from '@/components/ui';
 import { listCompetitions } from '@/services/firebase/matches';
 import {
   importLeagueFromTheSportsDB,
+  importFromFootballData,
   createManualCompetition,
 } from '@/services/firebase/admin';
 import { POPULAR_LEAGUES } from '@/services/thesportsdb';
+import { FREE_COMPETITIONS, hasFootballDataToken } from '@/services/footballData';
 import { useAuthStore } from '@/store/authStore';
 import { Competition } from '@/types';
 import { colors, spacing, fontSize, fontWeight, radius } from '@/theme';
@@ -23,6 +25,7 @@ export default function AdminScreen() {
 
   const [customId, setCustomId] = useState('');
   const [importing, setImporting] = useState<string | null>(null);
+  const [importingFd, setImportingFd] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newSeason, setNewSeason] = useState('');
   const [creating, setCreating] = useState(false);
@@ -39,6 +42,19 @@ export default function AdminScreen() {
       Alert.alert('Não deu certo', e?.message ?? 'Falha ao importar. Tente outra liga.');
     } finally {
       setImporting(null);
+    }
+  }
+
+  async function doImportFd(code: string) {
+    setImportingFd(code);
+    try {
+      const res = await importFromFootballData(code);
+      qc.invalidateQueries({ queryKey: ['competitions'] });
+      Alert.alert('Importado!', `${res.name}: ${res.matches} jogo(s) — temporada completa.`);
+    } catch (e: any) {
+      Alert.alert('Não deu certo', e?.message ?? 'Falha ao importar.');
+    } finally {
+      setImportingFd(null);
     }
   }
 
@@ -85,10 +101,43 @@ export default function AdminScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Importar de fonte gratuita */}
-        <Text style={styles.sectionTitle}>Importar liga (grátis, sem token)</Text>
+        {/* Importar football-data.org (temporada completa) */}
+        <Text style={styles.sectionTitle}>Importar competição (temporada completa)</Text>
         <Text style={styles.hint}>
-          Puxa os jogos recentes e próximos de uma liga do TheSportsDB.
+          football-data.org — Brasileirão, Libertadores, Champions e as grandes ligas.
+        </Text>
+        {hasFootballDataToken() ? (
+          <View style={styles.leagueGrid}>
+            {FREE_COMPETITIONS.map((c) => (
+              <Pressable
+                key={c.code}
+                style={styles.leagueChip}
+                onPress={() => doImportFd(c.code)}
+                disabled={!!importingFd}
+              >
+                <Text style={styles.leagueChipText}>
+                  {importingFd === c.code ? 'Importando…' : c.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <Card style={{ marginBottom: spacing.md }}>
+            <Text style={styles.hint}>
+              Para usar esta fonte, pegue um token grátis em football-data.org/client/register
+              e adicione no arquivo .env:{'\n'}
+              EXPO_PUBLIC_FOOTBALL_DATA_TOKEN=seu_token{'\n'}
+              Depois rode novamente com: npx expo start -c
+            </Text>
+          </Card>
+        )}
+
+        <View style={styles.divider} />
+
+        {/* Importar de fonte gratuita */}
+        <Text style={styles.sectionTitle}>Importar liga (sem token)</Text>
+        <Text style={styles.hint}>
+          TheSportsDB — alternativa sem cadastro (traz ~30 jogos recentes/próximos).
         </Text>
         <View style={styles.leagueGrid}>
           {POPULAR_LEAGUES.map((l) => (

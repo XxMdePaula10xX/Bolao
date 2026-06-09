@@ -10,6 +10,8 @@ import { db } from './config';
 import { Competition, Match } from '@/types';
 import { slugify } from '@/lib/utils';
 import { fetchLeagueFixtures } from '../thesportsdb';
+import { fetchFootballDataCompetition } from '../footballData';
+import { LeagueImport } from '../sportsTypes';
 
 /**
  * Funções do painel de admin. As escritas em competitions/matches só
@@ -79,14 +81,14 @@ export async function setMatchResult(
 }
 
 /**
- * Importa uma liga do TheSportsDB (grátis, sem token) e grava a
- * competição + jogos no Firestore. Retorna um resumo.
+ * Grava no Firestore uma competição + seus jogos a partir de um import
+ * normalizado (qualquer fonte). Reutilizado pelos importadores.
  */
-export async function importLeagueFromTheSportsDB(
-  leagueId: string
+async function writeLeagueImport(
+  data: LeagueImport,
+  metadata: Record<string, unknown>
 ): Promise<{ competitionId: string; name: string; matches: number }> {
-  const data = await fetchLeagueFixtures(leagueId);
-  const competitionId = `tsdb-${leagueId}`;
+  const { competitionId } = data;
 
   await setDoc(
     doc(db, 'competitions', competitionId),
@@ -96,9 +98,9 @@ export async function importLeagueFromTheSportsDB(
       name: data.leagueName,
       season: data.season,
       status: 'ongoing',
-      sourceProvider: 'thesportsdb',
+      sourceProvider: data.provider,
       logoUrl: null,
-      metadata: { leagueId },
+      metadata,
     },
     { merge: true }
   );
@@ -108,7 +110,7 @@ export async function importLeagueFromTheSportsDB(
     const chunk = data.matches.slice(i, i + 400);
     const batch = writeBatch(db);
     for (const m of chunk) {
-      const id = `tsdb-${m.externalId}`;
+      const id = `${data.provider === 'football-data' ? 'fd' : 'tsdb'}-${m.externalId}`;
       batch.set(
         doc(db, 'matches', id),
         {
@@ -134,4 +136,16 @@ export async function importLeagueFromTheSportsDB(
   }
 
   return { competitionId, name: data.leagueName, matches: written };
+}
+
+/** Importa uma liga do TheSportsDB (grátis, sem token). */
+export async function importLeagueFromTheSportsDB(leagueId: string) {
+  const data = await fetchLeagueFixtures(leagueId);
+  return writeLeagueImport(data, { leagueId });
+}
+
+/** Importa uma competição da football-data.org (temporada completa). */
+export async function importFromFootballData(code: string) {
+  const data = await fetchFootballDataCompetition(code);
+  return writeLeagueImport(data, { code });
 }

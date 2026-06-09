@@ -11,6 +11,8 @@
 const KEY = process.env.EXPO_PUBLIC_THESPORTSDB_KEY || '3';
 const BASE = `https://www.thesportsdb.com/api/v1/json/${KEY}`;
 
+import { NormalizedMatch, LeagueImport } from './sportsTypes';
+
 /** Ligas populares já com o ID do TheSportsDB (atalhos no painel admin). */
 export const POPULAR_LEAGUES: { id: string; name: string }[] = [
   { id: '4351', name: 'Brasileirão Série A' },
@@ -22,31 +24,6 @@ export const POPULAR_LEAGUES: { id: string; name: string }[] = [
   { id: '4334', name: 'Ligue 1 (França)' },
   { id: '4480', name: 'Champions League' },
 ];
-
-export interface NormalizedTeam {
-  id: string;
-  name: string;
-  shortName: string;
-  crestUrl: string | null;
-}
-
-export interface NormalizedMatch {
-  externalId: string;
-  homeTeam: NormalizedTeam;
-  awayTeam: NormalizedTeam;
-  date: Date | null;
-  status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'canceled';
-  homeScore: number | null;
-  awayScore: number | null;
-  round: number | null;
-}
-
-export interface LeagueImport {
-  leagueId: string;
-  leagueName: string;
-  season: string;
-  matches: NormalizedMatch[];
-}
 
 function parseDate(e: any): Date | null {
   const ts: string | undefined = e.strTimestamp;
@@ -144,9 +121,10 @@ export async function fetchLeagueFixtures(leagueId: string): Promise<LeagueImpor
   const season = events[0]?.strSeason ?? '';
 
   return {
-    leagueId,
+    competitionId: `tsdb-${leagueId}`,
     leagueName,
     season,
+    provider: 'thesportsdb',
     matches: events.map(mapEvent),
   };
 }

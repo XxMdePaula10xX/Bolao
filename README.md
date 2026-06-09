@@ -188,11 +188,17 @@ Este é o jeito **mais fácil** de ter competições para criar bolões: tudo pe
 
 ### Depois, cadastre competições
 No app: **Perfil → Abrir painel do admin**. Lá você pode:
-- **Importar uma liga** (grátis, via TheSportsDB): toque em "Brasileirão Série A" (ou outra) e ele puxa os jogos recentes e próximos. Sem token, sem cadastro.
-- **Criar uma competição na mão** e **adicionar os jogos um a um** (time mandante, visitante, data) — para o que não estiver na fonte.
+- **Importar competição completa** (football-data.org): traz a **temporada inteira** de ~13 competições confiáveis — Brasileirão, Libertadores, Champions, Premier League, La Liga, etc. Precisa de um **token grátis** (veja abaixo).
+- **Importar liga sem token** (TheSportsDB): traz ~30 jogos recentes/próximos. Bom para começar rápido, sem cadastro.
+- **Criar uma competição na mão** e **adicionar os jogos um a um** — para o que não estiver nas fontes.
 - **Lançar o placar** de um jogo e **encerrar** — isso dispara o cálculo da pontuação dos bolões.
 
-> A importação traz ~30 jogos por liga (recentes + próximos), que é o suficiente para palpitar as rodadas. Se uma liga não vier, use o cadastro manual.
+#### Token grátis da football-data.org (recomendado)
+1. Registre-se em https://www.football-data.org/client/register e copie o token que chega por e-mail.
+2. No arquivo `.env`, preencha: `EXPO_PUBLIC_FOOTBALL_DATA_TOKEN=seu_token`
+3. Reinicie com `npx expo start -c`. Agora os botões de competição completa aparecem no painel.
+
+> Cada competição cadastra todos os jogos da temporada de uma vez. Pode importar quantas quiser e ter **várias competições** disponíveis para os bolões.
 
 Pronto: a competição passa a aparecer no **wizard de criar bolão**.
 
