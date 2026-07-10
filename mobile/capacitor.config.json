@@ -1,0 +1,8 @@
+{
+  "appId": "com.bolaoflex.app",
+  "appName": "Bolão Flex",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

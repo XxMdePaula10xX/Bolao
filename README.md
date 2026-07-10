@@ -35,6 +35,54 @@ Abra o endereço que aparecer (ex: `http://localhost:3000`) no navegador.
 
 ---
 
+## 📦 Virar app instalável (Capacitor + Codemagic)
+
+A versão web pode virar um **app de verdade** (`.apk` para Android, `.ipa` para iPhone) usando o **Capacitor** (embrulha a web em nativo) + **Codemagic** (compila na nuvem — você não precisa de Mac nem de instalar nada nativo no seu PC).
+
+- `mobile/` → projeto Capacitor (aponta para a pasta `web/`).
+- `codemagic.yaml` → receita de build que o Codemagic executa.
+
+### Passo 1 — Conta no Codemagic e conectar o repositório
+1. Crie conta grátis em https://codemagic.io (login com GitHub).
+2. Autorize e **adicione o repositório** `XxMdePaula10xX/Bolao`.
+3. O Codemagic detecta o `codemagic.yaml` automaticamente.
+
+### Passo 2 — Colocar a config do Firebase como variáveis
+No Codemagic: **Environment variables** → crie um grupo chamado **`firebase_config`** com (os mesmos valores do `.env`):
+
+| Variável | Valor |
+|---|---|
+| `FB_API_KEY` | sua apiKey |
+| `FB_AUTH_DOMAIN` | seu authDomain |
+| `FB_PROJECT_ID` | seu projectId |
+| `FB_STORAGE_BUCKET` | seu storageBucket |
+| `FB_MSG_SENDER_ID` | seu messagingSenderId |
+| `FB_APP_ID` | seu appId |
+
+(Assim a chave não fica no GitHub — o build gera o `web/firebase-config.js` na hora.)
+
+### Passo 3 — Gerar o app Android (grátis, agora)
+1. No Codemagic, rode o workflow **"Bolão Flex · Android (APK)"**.
+2. Ao terminar (uns 5–10 min), ele **envia o `.apk` no seu e-mail** e deixa pra baixar.
+3. No celular Android: abra o `.apk` e instale (talvez precise permitir "instalar de fontes desconhecidas"). Pronto — app na tela. 🎉
+
+### Passo 4 — Gerar o app iPhone (precisa de conta Apple)
+Para iOS, a **Apple exige** uma conta de **Apple Developer (US$ 99/ano)** — é regra da Apple, não do Codemagic. Depois de ter a conta:
+1. No Codemagic, configure o **code signing** (certificado + provisioning) — o próprio Codemagic tem um assistente que integra com a Apple.
+2. Rode o workflow **"Bolão Flex · iOS (IPA)"** para gerar o `.ipa` (dá pra mandar pro seu iPhone via TestFlight ou instalar direto).
+
+### Custos, resumido
+| Item | Custo |
+|---|---|
+| Codemagic (build na nuvem) | Grátis até 500 min/mês |
+| APK Android (instalar direto) | **Grátis** |
+| Publicar na Play Store | US$ 25 (uma vez) |
+| App iPhone / TestFlight / App Store | US$ 99/ano (Apple) |
+
+> **Recomendação:** comece pelo **Android APK** (grátis, funciona hoje). Deixe o iPhone para quando decidir investir na conta Apple. E, enquanto isso, no iPhone dá pra usar a **versão web como PWA** ("Adicionar à tela de início") sem custo nenhum.
+
+---
+
 ## 📑 Índice
 
 1. [O que já está pronto](#-o-que-já-está-pronto)

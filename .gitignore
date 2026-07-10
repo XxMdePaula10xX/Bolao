@@ -1,6 +1,13 @@
 # dependencies
 node_modules/
 functions/node_modules/
+mobile/node_modules/
+
+# Capacitor: pastas nativas e web geradas no build (não versionar)
+mobile/www/
+mobile/android/
+mobile/ios/
+mobile/package-lock.json
 
 # package-lock é gerado localmente no seu computador (npm install).
 # Mantido fora do Git para evitar árvores de dependência inconsistentes.
