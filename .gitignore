@@ -33,6 +33,9 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# Config do Firebase da versão web (gerado localmente a partir do .example)
+web/firebase-config.js
+
 # Environment / segredos
 .env
 .env*.local

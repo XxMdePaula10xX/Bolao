@@ -6,6 +6,35 @@ App mobile para criar e gerenciar **bolões esportivos customizáveis** — púb
 
 ---
 
+## 🌐 Versão WEB (abre em qualquer celular por um link)
+
+Além do app React Native, existe uma **versão web** na pasta `web/` — HTML/CSS/JS puro, ligada ao **mesmo Firebase**. É a forma mais fácil de usar: você publica num link e todo mundo abre no navegador do celular, **sem instalar nada**.
+
+### Como publicar (3 passos)
+1. **Configuração:** copie `web/firebase-config.example.js` para `web/firebase-config.js` e cole os valores do seu Firebase (os mesmos do `.env`).
+   ```bash
+   # dentro da pasta web/
+   cp firebase-config.example.js firebase-config.js
+   ```
+2. **Publicar no ar** (dá um link `https://SEU-PROJETO.web.app`):
+   ```bash
+   firebase deploy --only hosting
+   ```
+   (Precisa ter feito `firebase login` e `firebase use --add` uma vez — veja o Passo 4.)
+3. Abra o link no celular. Pronto. Dá pra **"Adicionar à tela de início"** e virar um ícone igual app.
+
+### Testar no seu computador antes de publicar
+```bash
+npx serve web
+```
+Abra o endereço que aparecer (ex: `http://localhost:3000`) no navegador.
+
+> A versão web usa as **mesmas** regras do Firestore e os **mesmos** dados (competições, bolões, palpites, ranking) do app React Native. Cadastre competições pelo painel do admin do app, ou pela versão web quando esse recurso chegar nela.
+>
+> **Login/dados funcionam** (auth, criar bolão, entrar por código, palpitar, ranking, ao vivo, meus pontos). Chaveamento da copa e "poderes" ainda vão chegar na web.
+
+---
+
 ## 📑 Índice
 
 1. [O que já está pronto](#-o-que-já-está-pronto)

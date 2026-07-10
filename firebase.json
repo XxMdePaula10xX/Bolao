@@ -12,5 +12,10 @@
   ],
   "storage": {
     "rules": "storage.rules"
+  },
+  "hosting": {
+    "public": "web",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "firebase-config.example.js"],
+    "rewrites": [{ "source": "**", "destination": "/index.html" }]
   }
 }
