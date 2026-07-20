@@ -1,0 +1,27 @@
+# dependências
+node_modules/
+functions/node_modules/
+
+# build
+dist/
+dist-ssr/
+*.local
+
+# ambiente / segredos
+.env
+.env.*.local
+serviceAccountKey.json
+functions/.runtimeconfig.json
+
+# editor
+.vscode/
+.idea/
+.DS_Store
+
+# firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# logs
+npm-debug.log*

@@ -1,0 +1,133 @@
+/* ============================================================
+   Bolão da Copa — design tokens + base (PRD seção 11)
+   Tema dark premium: dourado (campeão), verde (acerto/subiu),
+   azul (Liga), roxo (Longo Prazo/mata-mata), vermelho (caiu).
+   ============================================================ */
+:root {
+  --bg: #0a0c14;
+  --bg-elev: #0d0f18;
+  --panel: #12151f;
+  --panel-2: #171b28;
+  --line: #232838;
+  --line-soft: #1b1f2c;
+
+  --txt: #e8ecf5;
+  --txt-2: #8a91a8;
+  --txt-mut: #626a80;
+
+  --gold: #f4c430;
+  --gold-2: #fbbf24;
+  --green: #00d68f;
+  --green-2: #16a34a;
+  --blue: #00b4d8;
+  --purple: #7c3aed;
+  --purple-2: #c084fc;
+  --red: #e05555;
+  --red-2: #ff4d4d;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+
+  --disp: 'Oswald', 'Arial Narrow', system-ui, sans-serif;
+  --body: 'Inter', -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  --wrap: 720px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
+img { max-width: 100%; display: block; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+.disp { font-family: var(--disp); text-transform: uppercase; letter-spacing: .5px; }
+.tnum { font-variant-numeric: tabular-nums; }
+.muted { color: var(--txt-2); }
+.center { text-align: center; }
+
+/* Layout helpers */
+.wrap { max-width: var(--wrap); margin: 0 auto; width: 100%; padding: 0 16px; }
+.stack { display: flex; flex-direction: column; }
+.row { display: flex; align-items: center; }
+.gap-sm { gap: 8px; } .gap { gap: 12px; } .gap-lg { gap: 20px; }
+.grow { flex: 1; }
+
+/* Tipografia */
+h1.page { font-family: var(--disp); font-weight: 700; font-size: 30px; line-height: 1.05; }
+h2.sec { font-family: var(--disp); font-weight: 600; font-size: 13px; letter-spacing: 2px; color: var(--txt-2); text-transform: uppercase; }
+
+/* Botões */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  padding: 13px 18px; font-weight: 700; font-size: 15px; width: 100%;
+  transition: filter .15s, transform .1s, background .15s;
+}
+.btn:active { transform: scale(.99); }
+.btn:disabled { opacity: .5; pointer-events: none; }
+.btn-gold { background: var(--gold); color: #2a2205; }
+.btn-gold:hover { filter: brightness(1.06); }
+.btn-green { background: var(--green); color: #04211a; }
+.btn-ghost { background: transparent; border-color: var(--line); color: var(--txt); }
+.btn-ghost:hover { border-color: var(--gold); }
+.btn-danger { background: var(--red); color: #fff; }
+
+/* Cards */
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px;
+}
+
+/* Inputs */
+.field { margin-bottom: 14px; }
+.field label { display: block; color: var(--txt-2); font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.field input, .field select {
+  width: 100%; background: var(--bg-elev); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 13px 14px; color: var(--txt); font-size: 15px;
+}
+.field input:focus, .field select:focus { border-color: var(--gold); outline: none; }
+.field .err { color: var(--red); font-size: 12.5px; margin-top: 6px; }
+
+/* Badges */
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700;
+  letter-spacing: .5px; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; }
+.badge-gold { background: rgba(244,196,48,.16); color: var(--gold); }
+.badge-green { background: rgba(0,214,143,.15); color: var(--green); }
+.badge-blue { background: rgba(0,180,216,.15); color: var(--blue); }
+.badge-purple { background: rgba(124,58,237,.2); color: var(--purple-2); }
+.badge-red { background: rgba(224,85,85,.16); color: #ff9b9b; }
+.badge-gray { background: rgba(138,145,168,.15); color: var(--txt-2); }
+
+/* Avatar redondo (forte, conforme PRD) */
+.avatar {
+  border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #04140d;
+  background: linear-gradient(135deg, var(--green), var(--green-2)); flex: 0 0 auto;
+}
+
+/* Spinner */
+.spinner { width: 34px; height: 34px; border: 3px solid var(--line); border-top-color: var(--gold);
+  border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading { display: grid; place-items: center; padding: 48px; }
+
+/* Setas de variação (ranking) */
+.mov-up { color: var(--green); } .mov-down { color: var(--red); } .mov-same { color: var(--blue); }
+
+/* Toast */
+.toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%) translateY(16px);
+  opacity: 0; background: var(--panel-2); border: 1px solid var(--line); color: var(--txt);
+  padding: 12px 18px; border-radius: 12px; font-weight: 600; z-index: 200; transition: .25s; max-width: 90%; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.ok { border-color: var(--green); }
+.toast.err { border-color: var(--red); }
