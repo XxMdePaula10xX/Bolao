@@ -127,7 +127,6 @@ export interface KOMatch {
   winnerId?: string | null;
   pointsEqual?: boolean;  // empate de pontos (desempate por posição na Liga)
   coChampions?: boolean;  // só na final: empate = co-campeões
-  matchIds?: string[];    // jogos reais que decidem este confronto
 }
 
 export interface KORound {
@@ -157,6 +156,7 @@ export interface BracketDoc {
   startGameIndex?: number;   // índice do 1º jogo da janela (Consolação)
   overlapsLiga?: boolean;    // a janela da Consolação sobrepõe o fim da Liga?
   createdAt: FireDate;
+  updatedAt?: FireDate;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +166,6 @@ export interface Team {
   id: string;
   name: string;
   flag?: string | null;   // emoji ou URL da bandeira
-  code?: string;          // ex: BRA
 }
 
 export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'postponed' | 'canceled';
@@ -174,7 +173,6 @@ export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'postponed' | 'can
 export interface Match {
   id: string;
   editionId: string;
-  externalId?: string;
   homeTeam: Team;
   awayTeam: Team;
   startTime: FireDate;
@@ -203,8 +201,11 @@ export interface Prediction {
   // Só em mata-mata: seleção que o participante acha que se classifica nos pênaltis.
   predictedPenaltyWinner?: string | null;
   submittedAt: FireDate;
-  lockedAt?: FireDate;
   pointsAwarded?: number | null;
+  // Cache de scoring no cliente (futuro):
+  wasExact?: boolean;
+  wasWinner?: boolean;
+  scoredAt?: FireDate;
 }
 
 export interface LongTermPrediction {
