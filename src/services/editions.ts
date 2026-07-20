@@ -15,6 +15,7 @@ import type {
   Edition,
   EditionMember,
   EditionPrizes,
+  EditionSettings,
   UserProfile,
 } from '@/types';
 
@@ -32,7 +33,12 @@ const DEFAULT_PRIZES: EditionPrizes = {
  */
 export async function createEdition(
   owner: UserProfile,
-  input: { name: string; competitionName?: string; prizes?: EditionPrizes },
+  input: {
+    name: string;
+    competitionName?: string;
+    prizes?: EditionPrizes;
+    settings?: EditionSettings;
+  },
 ): Promise<Edition> {
   const editionRef = doc(collection(db, 'editions'));
   const inviteCode = generateInviteCode();
@@ -46,6 +52,7 @@ export async function createEdition(
     status: 'draft',
     inviteCode,
     prizes,
+    ...(input.settings ? { settings: input.settings } : {}),
     memberCount: 1,
     ownerId: owner.id,
     createdAt: null,

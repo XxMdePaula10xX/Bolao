@@ -46,6 +46,24 @@ export interface EditionPrizes {
   longTerm: { perMarket: number }; // base por mercado (redistribui se ninguém acerta)
 }
 
+// Configurações das competições internas (Liga, Copa, Consolação).
+// Definidas pelo organizador na criação/preparação da edição.
+export interface EditionSettings {
+  league: {
+    matchesPerRound: number; // N jogos consecutivos por rodada (padrão 4)
+    winPoints: number;       // pontos por vitória no confronto (padrão 3)
+    drawPoints: number;      // pontos por empate no confronto (padrão 1)
+  };
+  cup: {
+    format: 'knockout' | 'groups';
+    groupSize?: number;          // participantes por grupo (format 'groups')
+    qualifiersPerGroup?: number; // quantos passam de cada grupo
+  };
+  consolation: {
+    lastN: number; // quantos ÚLTIMOS da Liga entram na Consolação
+  };
+}
+
 export interface Edition {
   id: string;
   name: string;              // ex: "Copa 2026"
@@ -54,8 +72,83 @@ export interface Edition {
   status: EditionStatus;
   inviteCode: string;
   prizes: EditionPrizes;
+  settings?: EditionSettings;
   memberCount: number;
   ownerId: string;
+  createdAt: FireDate;
+}
+
+// ---------------------------------------------------------------------------
+// Liga (fase de pontos corridos / confrontos por rodada)
+// ---------------------------------------------------------------------------
+export interface LeagueFixtureConfronto {
+  aUserId: string;
+  bUserId: string | null; // null = folga (bye) na rodada
+}
+
+export interface LeagueRound {
+  round: number; // 1-based
+  confrontos: LeagueFixtureConfronto[];
+}
+
+export interface LeagueDoc {
+  id: string;
+  editionId: string;
+  matchesPerRound: number;
+  rounds: LeagueRound[];
+  createdAt: FireDate;
+}
+
+export interface LeagueTableRow {
+  userId: string;
+  nickname?: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  leaguePoints: number;
+  pointsFor: number; // soma dos pontos-pró (pontos de palpite acumulados)
+  position: number;  // 1-based, após ordenação
+}
+
+// ---------------------------------------------------------------------------
+// Mata-mata (Copa e Consolação)
+// ---------------------------------------------------------------------------
+export type KOSlot = { userId: string; nickname?: string } | null;
+
+export interface KOMatch {
+  id: string;
+  slotA: KOSlot;
+  slotB: KOSlot;
+  byeA?: boolean; // slotA folga (avança direto)
+  byeB?: boolean; // slotB folga (avança direto)
+  pointsA?: number | null;
+  pointsB?: number | null;
+  winnerId?: string | null;
+  pointsEqual?: boolean;  // empate de pontos (desempate por posição na Liga)
+  coChampions?: boolean;  // só na final: empate = co-campeões
+  matchIds?: string[];    // jogos reais que decidem este confronto
+}
+
+export interface KORound {
+  stage: string; // 'Final' | 'Semifinal' | 'Quartas' | ...
+  matches: KOMatch[];
+}
+
+export interface CupGroup {
+  name: string; // 'Grupo A', 'Grupo B', ...
+  memberIds: string[];
+}
+
+export interface BracketDoc {
+  id: string;
+  editionId: string;
+  type: 'cup' | 'consolation';
+  format?: 'knockout' | 'groups';
+  groups?: CupGroup[];
+  qualifiersPerGroup?: number;
+  rounds: KORound[];
+  championIds?: string[]; // 1 campeão, ou 2 se co-campeões
   createdAt: FireDate;
 }
 

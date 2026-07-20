@@ -6,6 +6,9 @@ import { CreateEdition } from '@/features/editions/CreateEdition';
 import { JoinEdition } from '@/features/editions/JoinEdition';
 import { Participants } from '@/features/editions/Participants';
 import { RankingGeral } from '@/features/editions/RankingGeral';
+import { LigaTab } from '@/features/league/LigaTab';
+import { CopaTab } from '@/features/cup/CopaTab';
+import { ConsolacaoTab } from '@/features/consolation/ConsolacaoTab';
 import { toast } from '@/lib/toast';
 import type { Edition } from '@/types';
 
@@ -14,7 +17,7 @@ const TABS = [
   'Liga', 'Copa', 'Consolação', 'Longo Prazo', 'Estatísticas',
 ] as const;
 
-const ACTIVE_TABS = new Set(['Visão geral', 'Regulamento', 'Ranking Geral', 'Participantes']);
+const COMING_SOON_TABS = new Set(['Longo Prazo', 'Estatísticas']);
 
 export function EditionPage() {
   const profile = useAuthStore((s) => s.profile);
@@ -123,7 +126,28 @@ export function EditionPage() {
         {TABS[tab] === 'Participantes' && (
           <Participants editionId={edition.id} currentUserId={profile.id} />
         )}
-        {!ACTIVE_TABS.has(TABS[tab]) && <ComingSoon name={TABS[tab]} />}
+        {TABS[tab] === 'Liga' && (
+          <LigaTab
+            editionId={edition.id}
+            currentUserId={profile.id}
+            isOrganizer={isOrganizer(edition, profile.id)}
+          />
+        )}
+        {TABS[tab] === 'Copa' && (
+          <CopaTab
+            editionId={edition.id}
+            currentUserId={profile.id}
+            isOrganizer={isOrganizer(edition, profile.id)}
+          />
+        )}
+        {TABS[tab] === 'Consolação' && (
+          <ConsolacaoTab
+            editionId={edition.id}
+            currentUserId={profile.id}
+            isOrganizer={isOrganizer(edition, profile.id)}
+          />
+        )}
+        {COMING_SOON_TABS.has(TABS[tab]) && <ComingSoon name={TABS[tab]} />}
       </div>
     </div>
   );

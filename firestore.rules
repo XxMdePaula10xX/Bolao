@@ -55,6 +55,28 @@ service cloud.firestore {
             || isAdmin());
     }
 
+    match /leagues/{leagueId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn()
+        && (isEditionOrganizer(
+              request.resource != null
+                ? request.resource.data.editionId
+                : resource.data.editionId
+            )
+            || isAdmin());
+    }
+
+    match /brackets/{bracketId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn()
+        && (isEditionOrganizer(
+              request.resource != null
+                ? request.resource.data.editionId
+                : resource.data.editionId
+            )
+            || isAdmin());
+    }
+
     match /predictions/{predictionId} {
       allow read: if isMember(resource.data.editionId);
       allow create, update: if isSignedIn()
