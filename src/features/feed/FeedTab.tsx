@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { listFeed, postFeed } from '@/services/feed';
 import { toast } from '@/lib/toast';
+import { initials } from '@/lib/format';
+import { fireToMillis } from '@/lib/date';
 import type { FeedPost, FireDate, UserProfile } from '@/types';
 
-function toMillis(value: FireDate): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
-}
-
 function formatDate(value: FireDate): string {
-  const ms = toMillis(value);
+  const ms = fireToMillis(value);
   if (!ms) return 'Agora mesmo';
   return new Date(ms).toLocaleString('pt-BR', {
     day: '2-digit',
@@ -19,13 +15,6 @@ function formatDate(value: FireDate): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw =
-    parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
 }
 
 interface Props {

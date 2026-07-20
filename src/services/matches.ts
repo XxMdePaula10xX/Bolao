@@ -10,6 +10,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { fireToMillis } from '@/lib/date';
 import type { Match, Team } from '@/types';
 
 /** Slug simples e estável a partir do nome do time (usado como Team.id). */
@@ -28,7 +29,7 @@ function makeTeam(name: string, flag?: string): Team {
 }
 
 function sortByStartTime(a: Match, b: Match): number {
-  return toMillis(a.startTime) - toMillis(b.startTime);
+  return fireToMillis(a.startTime) - fireToMillis(b.startTime);
 }
 
 /** Lista jogos de uma edição, ordenados por startTime asc. */
@@ -107,10 +108,4 @@ export async function setMatchResult(
     },
     { merge: true },
   );
-}
-
-function toMillis(value: Match['startTime']): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
 }

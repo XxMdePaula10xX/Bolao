@@ -4,13 +4,8 @@ import { listEditionMembers, getEdition } from '@/services/editions';
 import { listMatches } from '@/services/matches';
 import { roundRobinRounds, maxBlockSize } from '@/lib/competition';
 import { toast } from '@/lib/toast';
+import { initials } from '@/lib/format';
 import type { LeagueDoc, LeagueTableRow } from '@/types';
-
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw = parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
-}
 
 function positionLabel(pos: number): string {
   if (pos === 1) return '🥇';

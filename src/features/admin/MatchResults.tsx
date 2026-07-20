@@ -2,26 +2,8 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { subscribeMatches, setMatchResult } from '@/services/matches';
 import { toast } from '@/lib/toast';
-import type { Match, MatchStatus, FireDate } from '@/types';
-
-/** Converte um FireDate (Timestamp | number | null) em milissegundos. */
-function toMillis(value: FireDate): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
-}
-
-/** Formata data/hora em pt-BR (ex.: "18/06, 16:00"). */
-function formatDate(value: FireDate): string {
-  const ms = toMillis(value);
-  if (!ms) return 'A definir';
-  return new Date(ms).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { formatDateTime } from '@/lib/date';
+import type { Match, MatchStatus } from '@/types';
 
 const STATUS_META: Record<MatchStatus, { label: string; badge: string }> = {
   scheduled: { label: 'Agendado', badge: 'badge-gray' },
@@ -168,7 +150,7 @@ export function MatchResults({ editionId }: MatchResultsProps) {
           <div key={m.id} className="card">
             <div className="row" style={{ justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
               <span className="muted" style={{ fontSize: 12 }}>
-                {formatDate(m.startTime)}
+                {formatDateTime(m.startTime)}
                 {m.stage ? ` · ${m.stage}` : ''}
                 {m.round != null ? ` · rod. ${m.round}` : ''}
               </span>

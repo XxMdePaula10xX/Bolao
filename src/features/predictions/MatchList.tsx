@@ -2,32 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { subscribeMatches } from '@/services/matches';
 import { listUserPredictions, submitPredictions } from '@/services/predictions';
-import type { Match, Prediction, FireDate } from '@/types';
+import type { Match, Prediction } from '@/types';
 import { toast } from '@/lib/toast';
-
-/** Converte um FireDate (Timestamp | number | null) em milissegundos. */
-function toMillis(value: FireDate): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
-}
-
-/** Formata data/hora em pt-BR (ex.: "18/06, 16:00"). */
-function formatDate(value: FireDate): string {
-  const ms = toMillis(value);
-  if (!ms) return 'A definir';
-  return new Date(ms).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { fireToMillis, formatDateTime } from '@/lib/date';
 
 /** Um jogo aceita palpite enquanto está 'scheduled' e ainda não começou. */
 function isLocked(match: Match, now: number): boolean {
   if (match.status !== 'scheduled') return true;
-  return toMillis(match.startTime) <= now;
+  return fireToMillis(match.startTime) <= now;
 }
 
 interface Draft {
@@ -218,7 +200,7 @@ export function MatchList({ editionId, uid }: MatchListProps) {
               style={{ justifyContent: 'space-between', gap: 8, marginBottom: 12 }}
             >
               <span className="muted" style={{ fontSize: 12 }}>
-                {formatDate(m.startTime)}
+                {formatDateTime(m.startTime)}
                 {m.stage ? ` · ${m.stage}` : ''}
               </span>
               <div className="row gap-sm">

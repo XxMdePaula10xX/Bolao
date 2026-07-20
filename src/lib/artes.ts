@@ -7,6 +7,7 @@
  *   const canvas = drawRankingArt(rows, 'Ranking Geral');
  *   await shareOrDownload(canvas, 'ranking.png');
  */
+import { formatBRL } from '@/lib/money';
 
 // ------------------------------------------------------------------
 // Tokens de tema (espelham o index.css, mas fixos para o canvas)
@@ -233,9 +234,6 @@ export function drawPayoutArt(
   const { canvas, ctx } = makeCanvas(rows.length);
   drawHeader(ctx, canvas, title);
 
-  const fmt = (v: number) =>
-    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
   const startY = HEADER_H;
   rows.forEach((r, i) => {
     const y = startY + i * ROW_H;
@@ -261,7 +259,7 @@ export function drawPayoutArt(
     ctx.textAlign = 'right';
     ctx.fillStyle = GREEN;
     ctx.font = FONT_DISP.replace('700', '700 38px');
-    ctx.fillText(fmt(r.total), WIDTH - PAD - 16, cy + 1);
+    ctx.fillText(formatBRL(r.total), WIDTH - PAD - 16, cy + 1);
   });
 
   drawFooter(ctx, canvas);

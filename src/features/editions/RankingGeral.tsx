@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import { listEditionMembers } from '@/services/editions';
+import { initials } from '@/lib/format';
 import type { EditionMember } from '@/types';
-
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw = parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
-}
 
 /** Medalha para o pódio, número para o resto. */
 function positionLabel(pos: number): string {

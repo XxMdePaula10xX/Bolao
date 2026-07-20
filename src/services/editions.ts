@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { generateInviteCode } from '@/lib/invite';
+import { fireToMillis } from '@/lib/date';
 import type {
   Edition,
   EditionMember,
@@ -99,7 +100,7 @@ export async function listMyEditions(uid: string): Promise<Edition[]> {
   const editions = await Promise.all(editionIds.map((id) => getEdition(id)));
   return editions
     .filter((e): e is Edition => e !== null)
-    .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+    .sort((a, b) => fireToMillis(b.createdAt) - fireToMillis(a.createdAt));
 }
 
 export async function findEditionByInvite(code: string): Promise<Edition | null> {
@@ -165,11 +166,4 @@ export async function setEditionStatus(
 
 export function isOrganizer(edition: Edition, uid: string): boolean {
   return edition.ownerId === uid;
-}
-
-function toMillis(value: Edition['createdAt']): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  // Timestamp
-  return value.toMillis();
 }

@@ -1,10 +1,6 @@
 import { useAuthStore } from '@/store/authStore';
 import { logout } from '@/services/auth';
-
-function initials(n: string) {
-  const p = (n || '?').trim().split(/\s+/);
-  return (p.length === 1 ? p[0].slice(0, 2) : p[0][0] + p[p.length - 1][0]).toUpperCase();
-}
+import { initials } from '@/lib/format';
 
 export function ProfilePage() {
   const { profile } = useAuthStore();

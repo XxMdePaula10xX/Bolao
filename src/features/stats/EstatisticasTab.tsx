@@ -4,17 +4,11 @@ import { getStats } from '@/services/stats';
 import { getTitleChances } from '@/services/montecarlo';
 import { drawGenericList } from '@/lib/artes';
 import { ShareImageButton } from '@/components/ShareImageButton';
+import { initials } from '@/lib/format';
 import type { StatRow } from '@/types';
 
 type StatsResult = Awaited<ReturnType<typeof getStats>>;
 type Chance = Awaited<ReturnType<typeof getTitleChances>>[number];
-
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw =
-    parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
-}
 
 function medal(pos: number): string {
   if (pos === 1) return '🥇';

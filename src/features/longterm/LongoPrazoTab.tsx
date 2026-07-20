@@ -3,6 +3,7 @@ import { setEditionStatus, listEditionMembers } from '@/services/editions';
 import { listLongTerm } from '@/services/longterm';
 import { getPayouts, saveGabarito } from '@/services/payouts';
 import { toast } from '@/lib/toast';
+import { initials } from '@/lib/format';
 import type {
   Edition,
   EditionMember,
@@ -10,12 +11,6 @@ import type {
   LongTermGabarito,
   LongTermPrediction,
 } from '@/types';
-
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw = parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
-}
 
 // Os 4 mercados de longo prazo (chaves alinhadas com LongTermPrediction/Gabarito).
 type MarketKey = 'championTeam' | 'topScorer' | 'assistLeader' | 'bestPlayer';

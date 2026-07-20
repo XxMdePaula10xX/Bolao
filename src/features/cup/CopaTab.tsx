@@ -5,17 +5,12 @@ import { listEditionMembers } from '@/services/editions';
 import { listMatches } from '@/services/matches';
 import { cupRoundCount, maxCupBlock } from '@/lib/competition';
 import { toast } from '@/lib/toast';
+import { initials } from '@/lib/format';
 import type { EditionMember, KOMatch, KORound } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw = parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
-}
-
 /** Nº de grupos e classificados (regra da fase de grupos: ceil(N/grupo) grupos). */
 function groupsPreview(total: number, groupSize: number, per: number): { groups: number; qualified: number } {
   if (total <= 0 || groupSize <= 0) return { groups: 0, qualified: 0 };

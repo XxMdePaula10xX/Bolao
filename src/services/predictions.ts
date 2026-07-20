@@ -8,6 +8,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { fireToMillis } from '@/lib/date';
 import type { Match, Prediction } from '@/types';
 
 /** Lista os palpites de um usuário numa edição. */
@@ -25,17 +26,11 @@ export async function listUserPredictions(
   return snap.docs.map((d) => d.data() as Prediction);
 }
 
-function toMillis(value: Match['startTime']): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
-}
-
 /** Um jogo aceita palpite enquanto está 'scheduled' e ainda não começou. */
 function isLocked(match: Match | undefined, now: number): boolean {
   if (!match) return true;
   if (match.status !== 'scheduled') return true;
-  return toMillis(match.startTime) <= now;
+  return fireToMillis(match.startTime) <= now;
 }
 
 /**

@@ -8,21 +8,11 @@ import {
 import { drawPayoutArt } from '@/lib/artes';
 import { ShareImageButton } from '@/components/ShareImageButton';
 import { toast } from '@/lib/toast';
+import { initials } from '@/lib/format';
+import { formatBRL } from '@/lib/money';
 import type { Edition, EditionMember, LongTermGabarito, UserPayout } from '@/types';
 
 type LiveResult = Awaited<ReturnType<typeof computePayoutsLive>>;
-
-/** Formata um valor em reais com 2 casas (pt-BR). */
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw =
-    parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
-}
 
 interface Props {
   editionId: string;
@@ -178,7 +168,7 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
             Total arrecadado
           </span>
           <span className="disp tnum" style={{ ...totalValue, color: 'var(--gold)' }}>
-            {brl(result.pool)}
+            {formatBRL(result.pool)}
           </span>
         </div>
         <div className="card" style={totalCard}>
@@ -186,7 +176,7 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
             Total distribuído
           </span>
           <span className="disp tnum" style={{ ...totalValue, color: 'var(--green)' }}>
-            {brl(result.distributed)}
+            {formatBRL(result.distributed)}
           </span>
         </div>
       </div>
@@ -374,7 +364,7 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
                         flex: '0 0 auto',
                       }}
                     >
-                      {brl(total)}
+                      {formatBRL(total)}
                     </span>
                   </div>
 
@@ -393,7 +383,7 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
                             className="tnum"
                             style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)' }}
                           >
-                            {brl(item.amount)}
+                            {formatBRL(item.amount)}
                           </span>
                         </div>
                       ))}

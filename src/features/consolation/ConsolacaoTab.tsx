@@ -10,17 +10,12 @@ import { listEditionMembers } from '@/services/editions';
 import { listMatches } from '@/services/matches';
 import { knockoutRounds, consolationBlockInfo } from '@/lib/competition';
 import { toast } from '@/lib/toast';
+import { initials } from '@/lib/format';
 import type { BracketDoc, KOMatch, KORound } from '@/types';
 
 const LAST_N_OPTIONS = [4, 6, 8];
 
 type Live = Awaited<ReturnType<typeof computeConsolationLive>>;
-
-function initials(name: string): string {
-  const parts = (name || '?').trim().split(/\s+/);
-  const raw = parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
-  return raw.toUpperCase();
-}
 
 interface Props {
   editionId: string;

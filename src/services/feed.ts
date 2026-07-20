@@ -14,13 +14,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { fireToMillis } from '@/lib/date';
 import type { FeedPost, UserProfile } from '@/types';
-
-function toMillis(value: FeedPost['createdAt']): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
-}
 
 /** Lista os posts do feed de uma edição, do mais recente para o mais antigo. */
 export async function listFeed(editionId: string): Promise<FeedPost[]> {
@@ -29,7 +24,7 @@ export async function listFeed(editionId: string): Promise<FeedPost[]> {
   );
   return snap.docs
     .map((d) => d.data() as FeedPost)
-    .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+    .sort((a, b) => fireToMillis(b.createdAt) - fireToMillis(a.createdAt));
 }
 
 /** Publica um post no feed da edição (autor = organizador). */
