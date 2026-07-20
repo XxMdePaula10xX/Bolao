@@ -16,6 +16,8 @@ import {
   seedConsolation,
   buildConsolationRounds,
   stageName,
+  roundRobinRounds,
+  maxBlockSize,
 } from './competition.ts';
 
 // Gerador determinístico (LCG) para testar sorteios sem depender de Math.random.
@@ -311,4 +313,41 @@ test('buildConsolationRounds: monta fases nomeadas a partir dos últimos da Liga
   const rounds = buildConsolationRounds(last);
   assert.deepEqual(rounds.map((r) => r.stage), ['Semifinal', 'Final']);
   assert.deepEqual([rounds[0].matches[0].slotA?.userId, rounds[0].matches[0].slotB?.userId], ['a', 'd']);
+});
+
+// ---------------------------------------------------------------------------
+// Nº de rodadas do round-robin e bloco máximo de jogos (casos reais do PRD)
+// ---------------------------------------------------------------------------
+test('roundRobinRounds: par -> n-1, ímpar -> n', () => {
+  assert.equal(roundRobinRounds(8), 7);   // par
+  assert.equal(roundRobinRounds(10), 9);  // par
+  assert.equal(roundRobinRounds(22), 21); // par
+  assert.equal(roundRobinRounds(7), 7);   // ímpar (um folga por rodada)
+  assert.equal(roundRobinRounds(1), 0);
+  assert.equal(roundRobinRounds(0), 0);
+});
+
+test('maxBlockSize: exemplos do usuário', () => {
+  // 8 pessoas (7 rodadas), 30 jogos -> ⌊30/7⌋ = 4 (usa 28, sobram 2)
+  assert.equal(maxBlockSize(8, 30), 4);
+  // 10 pessoas (9 rodadas), 30 jogos -> ⌊30/9⌋ = 3
+  assert.equal(maxBlockSize(10, 30), 3);
+  // 10 pessoas (9 rodadas), 26 jogos -> ⌊26/9⌋ = 2
+  assert.equal(maxBlockSize(10, 26), 2);
+  // 22 pessoas (21 rodadas), 64 jogos -> ⌊64/21⌋ = 3
+  assert.equal(maxBlockSize(22, 64), 3);
+});
+
+test('maxBlockSize: jogos insuficientes -> 0', () => {
+  // 8 pessoas -> 7 rodadas; com 5 jogos não dá nem 1 por rodada
+  assert.equal(maxBlockSize(8, 5), 0);
+});
+
+test('rodadas × bloco máximo nunca excede o total de jogos', () => {
+  for (const [n, g] of [[8, 30], [10, 30], [10, 26], [22, 64], [16, 48]] as [number, number][]) {
+    const b = maxBlockSize(n, g);
+    assert.ok(roundRobinRounds(n) * b <= g, `n=${n} g=${g} b=${b}`);
+    // e o próximo bloco (b+1) já estouraria
+    if (b >= 1) assert.ok(roundRobinRounds(n) * (b + 1) > g);
+  }
 });

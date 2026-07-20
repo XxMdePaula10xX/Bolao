@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { getLeague, drawLeague, computeLeagueTable } from '@/services/league';
 import { listEditionMembers, getEdition } from '@/services/editions';
 import { listMatches } from '@/services/matches';
+import { roundRobinRounds, maxBlockSize } from '@/lib/competition';
 import { toast } from '@/lib/toast';
 import type { LeagueDoc, LeagueTableRow } from '@/types';
 
@@ -45,6 +46,9 @@ export function LigaTab({ editionId, currentUserId, isOrganizer }: Props) {
   const [error, setError] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [openRound, setOpenRound] = useState<number | null>(null);
+  // Preparação do sorteio (sem Liga): nº de participantes, jogos e bloco escolhido.
+  const [prep, setPrep] = useState<{ members: number; games: number } | null>(null);
+  const [blockChoice, setBlockChoice] = useState<number>(4);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,8 +62,18 @@ export function LigaTab({ editionId, currentUserId, isOrganizer }: Props) {
       setLeague(lg);
       if (lg) {
         setView(await computeLeagueTable(editionId));
+        setPrep(null);
       } else {
         setView(null);
+        // Prepara os dados para o sorteio (nº de jogos + participantes).
+        const [matches, edition] = await Promise.all([
+          listMatches(editionId),
+          getEdition(editionId),
+        ]);
+        setPrep({ members: members.length, games: matches.length });
+        const wanted = edition?.settings?.league.matchesPerRound ?? 4;
+        const max = maxBlockSize(members.length, matches.length);
+        setBlockChoice(Math.max(1, Math.min(wanted, max || 1)));
       }
     } catch {
       setError(true);
@@ -89,25 +103,29 @@ export function LigaTab({ editionId, currentUserId, isOrganizer }: Props) {
 
     setDrawing(true);
     try {
-      const [members, matches, edition] = await Promise.all([
+      const [members, matches] = await Promise.all([
         listEditionMembers(editionId),
         listMatches(editionId),
-        getEdition(editionId),
       ]);
       if (members.length < 2) {
         toast('São necessários ao menos 2 participantes.', 'err');
         setDrawing(false);
         return;
       }
-      const matchesPerRound = edition?.settings?.league.matchesPerRound ?? 4;
-      const rounds = Math.max(1, Math.ceil(matches.length / matchesPerRound));
-      await drawLeague(
+      // O nº de rodadas é fixo pelo round-robin; o bloco é travado no máximo
+      // viável dentro do serviço (drawLeague). Passamos o bloco escolhido e o
+      // total de jogos, e avisamos se o bloco foi reduzido.
+      const { effectiveBlock } = await drawLeague(
         editionId,
         members.map((m) => m.userId),
-        rounds,
-        matchesPerRound,
+        blockChoice,
+        matches.length,
       );
-      toast('Confrontos da Liga sorteados!', 'ok');
+      if (effectiveBlock < blockChoice) {
+        toast(`Bloco ajustado para ${effectiveBlock} (máximo viável).`, 'ok');
+      } else {
+        toast('Confrontos da Liga sorteados!', 'ok');
+      }
       await load();
     } catch {
       toast('Não foi possível sortear a Liga.', 'err');
@@ -142,21 +160,80 @@ export function LigaTab({ editionId, currentUserId, isOrganizer }: Props) {
   // --- Sem Liga ainda ---
   if (!league) {
     if (isOrganizer) {
+      const numMembers = prep?.members ?? 0;
+      const games = prep?.games ?? 0;
+      const numRounds = roundRobinRounds(numMembers);
+      const maxBlock = maxBlockSize(numMembers, games);
+      const enoughMembers = numMembers >= 2;
+      const enoughGames = maxBlock >= 1;
+      const feasible = enoughMembers && enoughGames;
+      const used = numRounds * blockChoice;
+
       return (
         <div className="card">
           <h2 className="sec">Liga</h2>
           <p className="muted" style={{ marginTop: 8, fontSize: 14, lineHeight: 1.7 }}>
-            A Liga é disputada em confrontos por rodada, sorteados no início. Cada rodada é
-            um bloco de jogos consecutivos: quem fizer mais pontos no bloco vence o confronto.
+            A Liga é um turno único (todos contra todos), sorteado no início. Cada rodada soma
+            os pontos de um <b style={{ color: 'var(--txt)' }}>bloco de jogos</b> consecutivos:
+            quem fizer mais pontos vence o confronto.
           </p>
-          <button
-            className="btn btn-gold"
-            onClick={handleDraw}
-            disabled={drawing}
-            style={{ marginTop: 14 }}
-          >
-            {drawing ? 'Sorteando…' : 'Sortear confrontos da Liga'}
-          </button>
+
+          <div className="card" style={{ background: 'var(--bg-elev)', marginTop: 14 }}>
+            <div className="stack gap-sm" style={{ fontSize: 14 }}>
+              <Info label="Participantes" value={`${numMembers}`} />
+              <Info label="Rodadas (turno único)" value={numRounds ? `${numRounds}` : '—'} />
+              <Info label="Jogos cadastrados" value={`${games}`} />
+              <Info
+                label="Bloco máximo por rodada"
+                value={enoughGames ? `${maxBlock} jogos` : '—'}
+                highlight
+              />
+            </div>
+          </div>
+
+          {!enoughMembers && (
+            <p className="muted" style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>
+              São necessários ao menos 2 participantes.
+            </p>
+          )}
+          {enoughMembers && !enoughGames && (
+            <p className="muted" style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>
+              Jogos insuficientes: com {numMembers} participantes são {numRounds} rodadas, então
+              é preciso cadastrar ao menos {numRounds} jogos (1 por rodada). Há {games}. Cadastre
+              mais jogos na aba Admin.
+            </p>
+          )}
+
+          {feasible && (
+            <>
+              <div className="field" style={{ marginTop: 14 }}>
+                <label>Jogos por rodada (bloco)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={maxBlock}
+                  value={blockChoice}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value) || 1);
+                    setBlockChoice(Math.max(1, Math.min(v, maxBlock)));
+                  }}
+                />
+                <p className="muted" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.6 }}>
+                  Entre 1 e {maxBlock}. Serão usados {numRounds} × {blockChoice} ={' '}
+                  <b style={{ color: 'var(--txt)' }}>{used}</b> jogos nos confrontos
+                  {games - used > 0 && ` (os ${games - used} últimos ficam de fora da Liga)`}.
+                </p>
+              </div>
+              <button
+                className="btn btn-gold"
+                onClick={handleDraw}
+                disabled={drawing}
+                style={{ marginTop: 4 }}
+              >
+                {drawing ? 'Sorteando…' : 'Sortear confrontos da Liga'}
+              </button>
+            </>
+          )}
         </div>
       );
     }
@@ -331,6 +408,15 @@ function Confronto({
         )}
       </div>
       <Side name={nameOf(c.bUserId)} isMe={meB} align="right" winner={bWon} />
+    </div>
+  );
+}
+
+function Info({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="row gap" style={{ justifyContent: 'space-between' }}>
+      <span className="muted">{label}</span>
+      <span style={{ fontWeight: 700, color: highlight ? 'var(--gold)' : 'var(--txt)' }}>{value}</span>
     </div>
   );
 }

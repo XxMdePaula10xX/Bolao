@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { scorePrediction } from '@/lib/scoring';
-import { drawRoundRobin, shuffle, splitIntoBlocks } from '@/lib/competition';
+import { drawRoundRobin, shuffle, splitIntoBlocks, roundRobinRounds, maxBlockSize } from '@/lib/competition';
 import { listMatches } from '@/services/matches';
 import { getEdition, listEditionMembers } from '@/services/editions';
 import type {
@@ -136,21 +136,32 @@ export async function getLeague(editionId: string): Promise<LeagueDoc | null> {
 
 /**
  * Sorteia os confrontos da Liga (round-robin embaralhado) e grava o LeagueDoc.
- * A ordem dos confrontos é fixada aqui: embaralha os membros e roda o método
- * do círculo por `rounds` rodadas.
+ *
+ * REGRA IMPORTANTE (turno único): o nº de rodadas é fixado pelo round-robin
+ * (par → n-1, ímpar → n), NÃO por (jogos ÷ bloco). O bloco de jogos por rodada
+ * é limitado a ⌊totalGames / rodadas⌋ para os confrontos não quebrarem — se o
+ * valor pedido for maior, ele é reduzido para o máximo possível. Os jogos que
+ * sobram no fim da competição simplesmente não entram nos confrontos da Liga.
+ *
+ * Retorna o bloco efetivamente usado (pode ser menor que o pedido).
  */
 export async function drawLeague(
   editionId: string,
   memberIds: string[],
-  rounds: number,
   matchesPerRound: number,
-): Promise<void> {
+  totalGames: number,
+): Promise<{ rounds: number; effectiveBlock: number }> {
+  const rounds = roundRobinRounds(memberIds.length);
+  const maxBlock = maxBlockSize(memberIds.length, totalGames);
+  // Trava de segurança: nunca deixa o bloco maior que o máximo viável.
+  const effectiveBlock = Math.max(1, Math.min(matchesPerRound, maxBlock || 1));
+
   const shuffled = shuffle(memberIds);
   const leagueRounds = drawRoundRobin(shuffled, rounds);
   const league: LeagueDoc = {
     id: editionId,
     editionId,
-    matchesPerRound,
+    matchesPerRound: effectiveBlock,
     rounds: leagueRounds,
     createdAt: null,
   };
@@ -158,6 +169,7 @@ export async function drawLeague(
     ...league,
     createdAt: serverTimestamp(),
   });
+  return { rounds, effectiveBlock };
 }
 
 interface RoundConfrontoResult {

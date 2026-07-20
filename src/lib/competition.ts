@@ -51,6 +51,37 @@ export function splitIntoBlocks(orderedMatchIds: string[], size: number): string
 }
 
 // ---------------------------------------------------------------------------
+// Liga — nº de rodadas e bloco máximo de jogos
+// ---------------------------------------------------------------------------
+
+/**
+ * Nº de rodadas de um turno único (todos contra todos):
+ *  - par  → n-1 rodadas
+ *  - ímpar → n rodadas (um participante folga a cada rodada)
+ * Menos de 2 participantes → 0.
+ */
+export function roundRobinRounds(numParticipants: number): number {
+  if (numParticipants < 2) return 0;
+  return numParticipants % 2 === 0 ? numParticipants - 1 : numParticipants;
+}
+
+/**
+ * Bloco MÁXIMO de jogos por rodada da Liga, para os confrontos não quebrarem.
+ * Como o nº de rodadas é fixo pelo round-robin, precisamos de
+ * (rodadas × bloco) ≤ total de jogos. Logo o bloco máximo é ⌊jogos / rodadas⌋.
+ *
+ * Ex.: 8 pessoas (7 rodadas), 30 jogos → ⌊30/7⌋ = 4 (usa 28, sobram 2).
+ *      10 pessoas (9 rodadas), 30 jogos → ⌊30/9⌋ = 3.
+ *      10 pessoas (9 rodadas), 26 jogos → ⌊26/9⌋ = 2.
+ * Retorna 0 quando não há jogos suficientes nem para 1 por rodada.
+ */
+export function maxBlockSize(numParticipants: number, totalGames: number): number {
+  const rounds = roundRobinRounds(numParticipants);
+  if (rounds <= 0) return 0;
+  return Math.floor(totalGames / rounds);
+}
+
+// ---------------------------------------------------------------------------
 // Liga — round-robin (método do círculo)
 // ---------------------------------------------------------------------------
 
