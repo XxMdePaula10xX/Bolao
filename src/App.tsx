@@ -8,6 +8,7 @@ import { HomePage } from '@/pages/HomePage';
 import { PalpitesPage } from '@/pages/PalpitesPage';
 import { EditionPage } from '@/pages/EditionPage';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { AdminPage } from '@/pages/AdminPage';
 
 export function App() {
   const { initializing, profile, subscribe } = useAuthStore();
@@ -27,6 +28,7 @@ export function App() {
             <Route path="/palpites" element={<PalpitesPage />} />
             <Route path="/bolao" element={<EditionPage />} />
             <Route path="/perfil" element={<ProfilePage />} />
+            <Route path="/admin" element={<AdminPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

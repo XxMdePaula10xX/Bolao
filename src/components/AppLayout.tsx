@@ -5,6 +5,7 @@ const TABS = [
   { to: '/palpites', label: 'Palpites', icon: '🎯', end: false },
   { to: '/bolao', label: 'Bolão', icon: '🏆', end: false },
   { to: '/perfil', label: 'Perfil', icon: '👤', end: false },
+  { to: '/admin', label: 'Admin', icon: '⚙️', end: false },
 ];
 
 /** Casca do app: conteúdo + barra de navegação inferior fixa. */

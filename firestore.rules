@@ -1,0 +1,85 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(uid()))
+        && get(/databases/$(database)/documents/users/$(uid())).data.isSystemAdmin == true;
+    }
+
+    function isMember(editionId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/editionMembers/$(editionId + '_' + uid()));
+    }
+
+    function isEditionOrganizer(editionId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/editions/$(editionId))
+        && get(/databases/$(database)/documents/editions/$(editionId)).data.ownerId == uid();
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && userId == uid();
+      allow delete: if false;
+    }
+
+    match /editions/{editionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.ownerId == uid();
+      allow update: if isEditionOrganizer(editionId)
+        || isAdmin()
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount']));
+      allow delete: if isEditionOrganizer(editionId);
+    }
+
+    match /matches/{matchId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn()
+        && (isEditionOrganizer(
+              request.resource != null
+                ? request.resource.data.editionId
+                : resource.data.editionId
+            )
+            || isAdmin());
+    }
+
+    match /predictions/{predictionId} {
+      allow read: if isMember(resource.data.editionId);
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == uid()
+        && isMember(request.resource.data.editionId);
+      allow delete: if false;
+    }
+
+    match /longTermPredictions/{ltId} {
+      allow read: if isMember(resource.data.editionId);
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == uid();
+      allow delete: if false;
+    }
+
+    match /editionMembers/{memberId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == uid();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update: if isSignedIn() && resource.data.userId == uid();
+      allow create, delete: if false;
+    }
+  }
+}
