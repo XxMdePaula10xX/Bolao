@@ -12,7 +12,7 @@ import {
 import {
   decorateSlots,
   fetchNicknames,
-  leaguePositions,
+  leaguePositionsFrom,
   loadScoreData,
   sumPoints,
 } from '@/services/league';
@@ -94,9 +94,9 @@ export async function drawCupKnockout(editionId: string): Promise<void> {
     throw new Error('Copa não está em formato de grupos.');
   }
 
-  const [data, positions, nicknames] = await Promise.all([
-    loadScoreData(editionId),
-    leaguePositions(editionId),
+  const data = await loadScoreData(editionId);
+  const [positions, nicknames] = await Promise.all([
+    leaguePositionsFrom(editionId, data),
     fetchNicknames(editionId),
   ]);
 
@@ -187,9 +187,9 @@ export async function computeCupLive(editionId: string): Promise<CupLive> {
     };
   }
 
-  const [data, positions, nicknames] = await Promise.all([
-    loadScoreData(editionId),
-    leaguePositions(editionId),
+  const data = await loadScoreData(editionId);
+  const [positions, nicknames] = await Promise.all([
+    leaguePositionsFrom(editionId, data),
     fetchNicknames(editionId),
   ]);
 

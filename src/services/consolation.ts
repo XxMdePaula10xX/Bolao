@@ -7,11 +7,11 @@ import {
   splitIntoBlocks,
 } from '@/lib/competition';
 import {
-  computeLeagueTable,
+  computeLeagueTableFrom,
   decorateSlots,
   fetchNicknames,
   getLeague,
-  leaguePositions,
+  leaguePositionsFrom,
   loadScoreData,
   sumPoints,
 } from '@/services/league';
@@ -42,11 +42,13 @@ export async function drawConsolation(
   block: number,
   nicknames: Record<string, string>,
 ): Promise<void> {
-  const [{ table }, data, league] = await Promise.all([
-    computeLeagueTable(editionId),
+  const [data, league] = await Promise.all([
     loadScoreData(editionId),
     getLeague(editionId),
   ]);
+  const { table } = league
+    ? await computeLeagueTableFrom(editionId, data, league)
+    : { table: [] };
 
   // Últimos da tabela, do melhor-dos-últimos ao pior (a tabela já vem ordenada
   // do melhor ao pior no geral).
@@ -108,9 +110,9 @@ export async function computeConsolationLive(editionId: string): Promise<{
     return { block: 0, koRounds: [], championIds: [], startGameIndex: 0, overlapsLiga: false };
   }
 
-  const [data, positions, nicknames] = await Promise.all([
-    loadScoreData(editionId),
-    leaguePositions(editionId),
+  const data = await loadScoreData(editionId);
+  const [positions, nicknames] = await Promise.all([
+    leaguePositionsFrom(editionId, data),
     fetchNicknames(editionId),
   ]);
 

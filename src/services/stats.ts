@@ -5,20 +5,26 @@
  * e delega o cálculo à função pura `computeStats` (lib/stats).
  */
 import { listEditionMembers, getEdition } from '@/services/editions';
-import { loadScoreData, computeLeagueTable } from '@/services/league';
+import { loadScoreData, computeLeagueTableFrom, getLeague } from '@/services/league';
 import { computeStats } from '@/lib/stats';
-import type { Match } from '@/types';
+import type { LeagueTableRow, Match } from '@/types';
 
 /** Carrega tudo o que a edição precisa e devolve as estatísticas prontas. */
 export async function getStats(
   editionId: string,
 ): Promise<ReturnType<typeof computeStats>> {
+  // Carrega os dados de pontuação UMA vez e reaproveita para a tabela da Liga,
+  // em vez de deixar computeLeagueTable reler todas as predictions.
   const [members, edition, data, league] = await Promise.all([
     listEditionMembers(editionId),
     getEdition(editionId),
     loadScoreData(editionId),
-    computeLeagueTable(editionId),
+    getLeague(editionId),
   ]);
+
+  const leagueTable: LeagueTableRow[] = league
+    ? (await computeLeagueTableFrom(editionId, data, league)).table
+    : [];
 
   // matches na ordem por startTime asc (a mesma usada nos blocos).
   const matches: Match[] = data.orderedMatchIds
@@ -32,6 +38,6 @@ export async function getStats(
     matches,
     predsByUser: data.predsByUser,
     matchesPerRound,
-    leagueTable: league.table,
+    leagueTable,
   });
 }

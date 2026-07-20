@@ -202,9 +202,25 @@ export async function computeLeagueTable(editionId: string): Promise<{
 }> {
   const league = await getLeague(editionId);
   if (!league) return { table: [], rounds: [] };
+  const data = await loadScoreData(editionId);
+  return computeLeagueTableFrom(editionId, data, league);
+}
 
-  const [data, edition, nicknames] = await Promise.all([
-    loadScoreData(editionId),
+/**
+ * Variante de {@link computeLeagueTable} que reaproveita dados já carregados
+ * (`data` de {@link loadScoreData} e o `league` já lido). Evita reler TODAS as
+ * predictions quando quem chama já tem esses dados em mãos. Comportamento e
+ * resultado idênticos a `computeLeagueTable`.
+ */
+export async function computeLeagueTableFrom(
+  editionId: string,
+  data: EditionScoreData,
+  league: LeagueDoc,
+): Promise<{
+  table: LeagueTableRow[];
+  rounds: { round: number; confrontos: RoundConfrontoResult[] }[];
+}> {
+  const [edition, nicknames] = await Promise.all([
     getEdition(editionId),
     fetchNicknames(editionId),
   ]);
@@ -304,10 +320,30 @@ export async function computeLeagueTable(editionId: string): Promise<{
  * Liga (ou tabela vazia), usa o Ranking Geral (membros por totalPoints desc).
  */
 export async function leaguePositions(editionId: string): Promise<Record<string, number>> {
-  const { table } = await computeLeagueTable(editionId);
-  if (table.length > 0) {
+  const data = await loadScoreData(editionId);
+  return leaguePositionsFrom(editionId, data);
+}
+
+/**
+ * Variante de {@link leaguePositions} que reaproveita dados já carregados.
+ * Opcionalmente aceita uma `table` já calculada (de
+ * {@link computeLeagueTableFrom}) para evitar recomputá-la. Evita reler as
+ * predictions quando quem chama já tem `data`. Resultado idêntico a
+ * `leaguePositions`.
+ */
+export async function leaguePositionsFrom(
+  editionId: string,
+  data: EditionScoreData,
+  table?: LeagueTableRow[],
+): Promise<Record<string, number>> {
+  let rows = table;
+  if (!rows) {
+    const league = await getLeague(editionId);
+    rows = league ? (await computeLeagueTableFrom(editionId, data, league)).table : [];
+  }
+  if (rows.length > 0) {
     const out: Record<string, number> = {};
-    for (const row of table) out[row.userId] = row.position;
+    for (const row of rows) out[row.userId] = row.position;
     return out;
   }
   // Fallback: Ranking Geral (listEditionMembers já vem ordenado por totalPoints desc).
