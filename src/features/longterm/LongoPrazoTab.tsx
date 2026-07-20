@@ -126,10 +126,16 @@ export function LongoPrazoTab({ editionId, currentUserId, isOrganizer, edition }
     try {
       await setEditionStatus(editionId, next);
       setStatus(next);
-      toast(
-        next === 'longterm_open' ? 'Janela de Longo Prazo aberta!' : 'Copa iniciada — palpites travados.',
-        'ok',
-      );
+      // Toast conforme a transição de status.
+      const msg =
+        next === 'longterm_open'
+          ? 'Janela de Longo Prazo aberta!'
+          : next === 'running'
+            ? 'Copa iniciada — palpites travados.'
+            : next === 'finished'
+              ? 'Edição encerrada.'
+              : 'Status atualizado.';
+      toast(msg, 'ok');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível atualizar o status.', 'err');
     } finally {
@@ -207,6 +213,20 @@ export function LongoPrazoTab({ editionId, currentUserId, isOrganizer, edition }
               style={{ width: 'auto' }}
             >
               Iniciar a Copa
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={() => {
+                // Confirma só aqui; changeStatus apenas executa a transição.
+                const ok = window.confirm(
+                  'Encerrar a edição? Isso marca a Copa como finalizada. O gabarito e a premiação continuam editáveis.',
+                );
+                if (ok) changeStatus('finished');
+              }}
+              disabled={changing || status !== 'running'}
+              style={{ width: 'auto' }}
+            >
+              Encerrar edição
             </button>
           </div>
         )}

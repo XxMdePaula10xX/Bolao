@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listMyEditions, isOrganizer } from '@/services/editions';
+import { listMatches } from '@/services/matches';
+import { getLeague } from '@/services/league';
+import { getCup } from '@/services/cup';
+import { getConsolation } from '@/services/consolation';
+import { getPayouts } from '@/services/payouts';
 import { useAuthStore } from '@/store/authStore';
 import { useEditionStore } from '@/store/editionStore';
 import { CreateEdition } from '@/features/editions/CreateEdition';
@@ -92,18 +97,52 @@ export function EditionPage() {
   return (
     <div>
       <div className="wrap" style={{ paddingTop: 24 }}>
-        <h1 className="page">{edition.name}</h1>
-        {edition.competitionName && (
-          <p className="muted" style={{ fontSize: 14, marginTop: 2 }}>{edition.competitionName}</p>
-        )}
+        <div className="row gap" style={{ justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div>
+            <h1 className="page">{edition.name}</h1>
+            {edition.competitionName && (
+              <p className="muted" style={{ fontSize: 14, marginTop: 2 }}>{edition.competitionName}</p>
+            )}
+          </div>
+          {/* Seletor de edição: só quando há mais de uma */}
+          {editions.length > 1 && (
+            <div className="row gap-sm" style={{ flexWrap: 'wrap' }}>
+              <span className="muted" style={{ fontSize: 13 }}>Edição</span>
+              <select
+                value={edition.id}
+                onChange={(e) => { setCurrentEdition(e.target.value); setTab(0); }}
+                style={{
+                  background: 'var(--bg-elev)', border: '1px solid var(--line)',
+                  borderRadius: 'var(--radius-sm)', color: 'var(--txt)',
+                  padding: '8px 12px', fontWeight: 600,
+                }}
+              >
+                {editions.map((e) => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div style={{ borderBottom: '1px solid var(--line)', marginTop: 12 }}>
-        <div className="wrap" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 10 }}>
+      {/* Faixa de abas roláveis, com gradiente de "há mais à direita" */}
+      <div style={{ borderBottom: '1px solid var(--line)', marginTop: 12, position: 'relative' }}>
+        <div
+          className="wrap"
+          role="tablist"
+          style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 10 }}
+        >
           {TABS.map((t, i) => (
             <button
               key={t}
-              onClick={() => setTab(i)}
+              role="tab"
+              aria-selected={tab === i}
+              onClick={(e) => {
+                setTab(i);
+                // rola a aba ativa para o centro da vista
+                e.currentTarget.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+              }}
               className="disp"
               style={{
                 flex: '0 0 auto', border: '1px solid var(--line)', borderRadius: 999,
@@ -116,11 +155,19 @@ export function EditionPage() {
             </button>
           ))}
         </div>
+        {/* overlay decorativo à direita: sinaliza que há mais abas */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute', top: 0, right: 0, bottom: 0, width: 36,
+            pointerEvents: 'none', background: 'linear-gradient(to right, transparent, var(--bg))',
+          }}
+        />
       </div>
 
       <div className="wrap" style={{ paddingTop: 18 }}>
         {TABS[tab] === 'Visão geral' && (
-          <Overview edition={edition} isOrganizer={isOrganizer(edition, profile.id)} />
+          <Overview edition={edition} isOrganizer={isOrganizer(edition, profile.id)} setTab={setTab} />
         )}
         {TABS[tab] === 'Regulamento' && <Regulamento />}
         {TABS[tab] === 'Ranking Geral' && (
@@ -182,7 +229,71 @@ export function EditionPage() {
   );
 }
 
-function Overview({ edition, isOrganizer: organizer }: { edition: Edition; isOrganizer: boolean }) {
+/** Sinais carregados do backend para o roteiro do organizador. */
+interface ChecklistSignals {
+  hasMatches: boolean;
+  hasLeague: boolean;
+  hasCup: boolean;
+  hasConsolation: boolean;
+  payoutsReady: boolean;
+}
+
+/** Um passo do roteiro: concluído (✓) ou pendente (○), com destino opcional. */
+interface RoteiroStep {
+  label: string;
+  done: boolean;
+  tab?: number;   // aba de destino ao clicar
+  hint?: string;  // dica curta quando não há navegação
+}
+
+function Overview({
+  edition,
+  isOrganizer: organizer,
+  setTab,
+}: {
+  edition: Edition;
+  isOrganizer: boolean;
+  setTab: (i: number) => void;
+}) {
+  const [signals, setSignals] = useState<ChecklistSignals | null>(null);
+
+  // Carrega os sinais do roteiro UMA vez por edição/status (tolerante a falhas).
+  useEffect(() => {
+    if (!organizer) return;
+    let alive = true;
+    (async () => {
+      try {
+        const [matches, league, cup, consolation, payouts] = await Promise.all([
+          listMatches(edition.id).catch(() => []),
+          getLeague(edition.id).catch(() => null),
+          getCup(edition.id).catch(() => null),
+          getConsolation(edition.id).catch(() => null),
+          getPayouts(edition.id).catch(() => null),
+        ]);
+        if (!alive) return;
+        const gab = payouts?.gabarito;
+        const gabaritoFilled = !!gab && (
+          !!gab.championTeam || !!gab.topScorer || !!gab.assistLeader || !!gab.bestPlayer
+        );
+        const hasContribution = !!payouts
+          && Object.values(payouts.contributions ?? {}).some((v) => v > 0);
+        setSignals({
+          hasMatches: matches.length > 0,
+          hasLeague: league != null,
+          hasCup: cup != null,
+          hasConsolation: consolation != null,
+          payoutsReady: payouts != null && (gabaritoFilled || hasContribution),
+        });
+      } catch {
+        // Qualquer falha => trata tudo como pendente, sem quebrar a tela.
+        if (alive) {
+          setSignals({ hasMatches: false, hasLeague: false, hasCup: false, hasConsolation: false, payoutsReady: false });
+        }
+      }
+    })();
+    return () => { alive = false; };
+  }, [edition.id, edition.status, organizer]);
+
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(edition.inviteCode);
@@ -211,8 +322,91 @@ function Overview({ edition, isOrganizer: organizer }: { edition: Edition; isOrg
     }
   }
 
+  // Índices reais das abas (evita números frágeis se a ordem mudar).
+  const idxLongterm = TABS.indexOf('Longo Prazo');
+  const idxLiga = TABS.indexOf('Liga');
+  const idxCopa = TABS.indexOf('Copa');
+  const idxConsolacao = TABS.indexOf('Consolação');
+  const idxPremiacao = TABS.indexOf('Premiação');
+
+  const s = signals; // pode ser null enquanto carrega
+  const longtermOpen = ['longterm_open', 'running', 'finished'].includes(edition.status);
+  const running = ['running', 'finished'].includes(edition.status);
+  const finished = edition.status === 'finished';
+
+  // Passos na ordem do ciclo da edição.
+  const steps: RoteiroStep[] = [
+    { label: 'Edição criada', done: true },
+    { label: 'Abrir janela de Longo Prazo', done: longtermOpen, tab: idxLongterm },
+    { label: 'Cadastrar os jogos', done: s?.hasMatches ?? false, hint: 'cadastre em Admin' },
+    { label: 'Sortear a Liga', done: s?.hasLeague ?? false, tab: idxLiga },
+    { label: 'Sortear a Copa', done: s?.hasCup ?? false, tab: idxCopa },
+    { label: 'Iniciar a Copa', done: running, tab: idxLongterm },
+    { label: 'Sortear a Consolação', done: s?.hasConsolation ?? false, tab: idxConsolacao },
+    { label: 'Cadastrar gabarito e contribuições', done: s?.payoutsReady ?? false, tab: idxPremiacao },
+    { label: 'Encerrar a edição', done: finished, tab: idxLongterm },
+  ];
+  const allDone = steps.every((st) => st.done);
+  const nextIdx = steps.findIndex((st) => !st.done); // primeiro pendente destacado
+
   return (
     <div className="stack gap">
+      {organizer && (
+        <div className="card">
+          <h2 className="sec">Roteiro do organizador</h2>
+          {allDone ? (
+            <p style={{ marginTop: 12, fontSize: 15, fontWeight: 600, color: 'var(--green)' }}>
+              Tudo pronto! 🎉 Edição no ar.
+            </p>
+          ) : (
+            <div className="stack" style={{ marginTop: 10 }}>
+              {steps.map((st, i) => {
+                const tabIndex = st.tab; // const local: mantém o narrowing no onClick
+                const isNext = i === nextIdx;
+                const icon = st.done ? '✓' : '○';
+                const iconColor = st.done ? 'var(--green)' : (isNext ? 'var(--gold)' : 'var(--txt-2)');
+                const labelColor = st.done ? 'var(--txt-2)' : (isNext ? 'var(--gold)' : 'var(--txt)');
+
+                const body = (
+                  <div className="row gap-sm" style={{ width: '100%', textAlign: 'left' }}>
+                    <span style={{ color: iconColor, fontWeight: 700, width: 16, flex: '0 0 auto' }}>{icon}</span>
+                    <span style={{ color: labelColor, fontWeight: st.done ? 500 : 600, fontSize: 14, opacity: st.done ? 0.85 : 1 }}>
+                      {st.label}
+                    </span>
+                    {isNext && !st.done && (
+                      <span className="disp" style={{ marginLeft: 'auto', color: 'var(--gold)', fontSize: 12, fontWeight: 700 }}>
+                        Próximo passo →
+                      </span>
+                    )}
+                    {st.hint && !st.done && (
+                      <span className="muted" style={{ marginLeft: isNext ? 8 : 'auto', fontSize: 12 }}>
+                        {st.hint}
+                      </span>
+                    )}
+                  </div>
+                );
+
+                // Clicável só quando há aba de destino; senão texto simples.
+                return tabIndex != null ? (
+                  <button
+                    key={st.label}
+                    onClick={() => setTab(tabIndex)}
+                    style={{
+                      background: 'transparent', border: 'none', padding: '8px 4px',
+                      cursor: 'pointer', display: 'flex', width: '100%',
+                    }}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div key={st.label} style={{ padding: '8px 4px' }}>{body}</div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="card">
         <h2 className="sec">Código de convite</h2>
         <div className="row gap" style={{ marginTop: 10, justifyContent: 'space-between', flexWrap: 'wrap' }}>

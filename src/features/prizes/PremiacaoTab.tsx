@@ -3,7 +3,6 @@ import type { CSSProperties } from 'react';
 import {
   getPayouts,
   saveContributions,
-  saveGabarito,
   computePayoutsLive,
 } from '@/services/payouts';
 import { drawPayoutArt } from '@/lib/artes';
@@ -32,25 +31,12 @@ interface Props {
   edition: Edition;
 }
 
-interface GabaritoForm {
-  championTeam: string;
-  topScorer: string;
-  assistLeader: string;
-  bestPlayer: string;
-}
-
-const EMPTY_GABARITO: GabaritoForm = {
-  championTeam: '',
-  topScorer: '',
-  assistLeader: '',
-  bestPlayer: '',
-};
-
-const GABARITO_FIELDS: { key: keyof GabaritoForm; label: string; placeholder: string }[] = [
-  { key: 'championTeam', label: 'Campeão da Copa', placeholder: 'Ex: Brasil' },
-  { key: 'topScorer', label: 'Artilheiro', placeholder: 'Nome do jogador' },
-  { key: 'assistLeader', label: 'Garçom (assistências)', placeholder: 'Nome do jogador' },
-  { key: 'bestPlayer', label: 'Melhor Jogador', placeholder: 'Nome do jogador' },
+// Mercados do gabarito exibidos em modo leitura (edição fica na aba Longo Prazo).
+const GABARITO_FIELDS: { key: keyof LongTermGabarito; label: string }[] = [
+  { key: 'championTeam', label: 'Campeão da Copa' },
+  { key: 'topScorer', label: 'Artilheiro' },
+  { key: 'assistLeader', label: 'Garçom (assistências)' },
+  { key: 'bestPlayer', label: 'Melhor Jogador' },
 ];
 
 export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }: Props) {
@@ -59,11 +45,10 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  // Estado editável do organizador (contribuições em texto e gabarito).
+  // Contribuições editáveis pelo organizador; gabarito é apenas leitura aqui.
   const [contribDraft, setContribDraft] = useState<Record<string, string>>({});
-  const [gabaritoDraft, setGabaritoDraft] = useState<GabaritoForm>(EMPTY_GABARITO);
+  const [gabarito, setGabarito] = useState<LongTermGabarito>({});
   const [savingContrib, setSavingContrib] = useState(false);
-  const [savingGabarito, setSavingGabarito] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,13 +69,7 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
       }
       setContribDraft(draft);
 
-      const g = payouts?.gabarito;
-      setGabaritoDraft({
-        championTeam: g?.championTeam ?? '',
-        topScorer: g?.topScorer ?? '',
-        assistLeader: g?.assistLeader ?? '',
-        bestPlayer: g?.bestPlayer ?? '',
-      });
+      setGabarito(payouts?.gabarito ?? {});
     } catch {
       setError(true);
     } finally {
@@ -126,25 +105,6 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
       toast('Não foi possível salvar as contribuições.', 'err');
     } finally {
       setSavingContrib(false);
-    }
-  }
-
-  async function handleSaveGabarito() {
-    setSavingGabarito(true);
-    try {
-      const gabarito: LongTermGabarito = {
-        championTeam: gabaritoDraft.championTeam.trim() || null,
-        topScorer: gabaritoDraft.topScorer.trim() || null,
-        assistLeader: gabaritoDraft.assistLeader.trim() || null,
-        bestPlayer: gabaritoDraft.bestPlayer.trim() || null,
-      };
-      await saveGabarito(editionId, gabarito);
-      toast('Gabarito salvo. Prêmios recalculados.', 'ok');
-      await load();
-    } catch {
-      toast('Não foi possível salvar o gabarito.', 'err');
-    } finally {
-      setSavingGabarito(false);
     }
   }
 
@@ -305,31 +265,41 @@ export function PremiacaoTab({ editionId, currentUserId, isOrganizer, edition }:
               Gabarito do Longo Prazo
             </h2>
             <p className="muted" style={intro}>
-              Cadastre as respostas certas dos 4 mercados (geralmente ao fim da Copa). Quem
-              bateu o gabarito acertou e entra no rateio do Longo Prazo.
+              Respostas certas dos 4 mercados que definem o rateio do Longo Prazo. Edite o
+              gabarito na aba Longo Prazo.
             </p>
-            <div style={{ marginTop: 14 }}>
-              {GABARITO_FIELDS.map((f) => (
-                <div key={f.key} className="field">
-                  <label>{f.label}</label>
-                  <input
-                    type="text"
-                    value={gabaritoDraft[f.key]}
-                    placeholder={f.placeholder}
-                    onChange={(e) =>
-                      setGabaritoDraft((prev) => ({ ...prev, [f.key]: e.target.value }))
-                    }
-                  />
-                </div>
-              ))}
+            <div className="stack" style={{ marginTop: 14 }}>
+              {GABARITO_FIELDS.map((f, i) => {
+                const v = gabarito[f.key];
+                return (
+                  <div
+                    key={f.key}
+                    className="row gap"
+                    style={{
+                      justifyContent: 'space-between',
+                      padding: '10px 0',
+                      borderTop: i === 0 ? 'none' : '1px solid var(--line-soft)',
+                    }}
+                  >
+                    <span className="muted" style={{ fontSize: 14 }}>
+                      {f.label}
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: v ? 'var(--txt)' : 'var(--txt-2)',
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {v || '—'}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            <button
-              className="btn btn-gold"
-              onClick={handleSaveGabarito}
-              disabled={savingGabarito}
-            >
-              {savingGabarito ? 'Salvando…' : 'Salvar gabarito'}
-            </button>
           </div>
         </>
       )}

@@ -1,4 +1,8 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { useAuthStore } from '@/store/authStore';
+import { useEditionStore } from '@/store/editionStore';
+import { getEdition, isOrganizer } from '@/services/editions';
 
 const TABS = [
   { to: '/', label: 'Home', icon: '🏠', end: true },
@@ -10,12 +14,46 @@ const TABS = [
 
 /** Casca do app: conteúdo + barra de navegação inferior fixa. */
 export function AppLayout() {
+  const profile = useAuthStore((s) => s.profile);
+  const currentEditionId = useEditionStore((s) => s.currentEditionId);
+
+  // Organizador da edição atual: começa oculto até confirmar (evita flicker).
+  const [isOrgOfCurrent, setIsOrgOfCurrent] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const uid = profile?.id;
+    // Sem edição ou sem usuário: não é organizador.
+    if (!currentEditionId || !uid) {
+      setIsOrgOfCurrent(false);
+      return;
+    }
+    // Enquanto carrega, mantém oculto para não piscar a aba.
+    setIsOrgOfCurrent(false);
+    (async () => {
+      try {
+        const edition = await getEdition(currentEditionId);
+        if (!alive) return;
+        setIsOrgOfCurrent(edition !== null && isOrganizer(edition, uid));
+      } catch {
+        if (alive) setIsOrgOfCurrent(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [currentEditionId, profile?.id]);
+
+  // Admin do sistema OU organizador da edição atual habilita a aba.
+  const canSeeAdmin = profile?.isSystemAdmin === true || isOrgOfCurrent;
+  const tabs = TABS.filter((t) => t.to !== '/admin' || canSeeAdmin);
+
   return (
     <div style={{ minHeight: '100%', paddingBottom: 76 }}>
       <Outlet />
       <nav style={navBar}>
         <div className="wrap row" style={{ justifyContent: 'space-around' }}>
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <NavLink key={t.to} to={t.to} end={t.end} style={({ isActive }) => tab(isActive)}>
               <span style={{ fontSize: 20 }}>{t.icon}</span>
               <span style={{ fontSize: 11, fontWeight: 600 }}>{t.label}</span>
