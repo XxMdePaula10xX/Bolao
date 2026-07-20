@@ -212,3 +212,65 @@ export interface LongTermPrediction {
   bestPlayer?: string | null;
   submittedAt: FireDate;
 }
+
+// ---------------------------------------------------------------------------
+// Longo Prazo — gabarito (respostas certas) e premiação
+// ---------------------------------------------------------------------------
+
+/** Gabarito dos 4 mercados de longo prazo (respostas certas). */
+export interface LongTermGabarito {
+  championTeam?: string | null;
+  topScorer?: string | null;
+  assistLeader?: string | null;
+  bestPlayer?: string | null;
+}
+
+/** Uma linha de origem de prêmio (ex.: 'Ranking 1º' → R$100). */
+export interface PayoutBreakdownItem {
+  source: string;
+  amount: number;
+}
+
+/** Quanto um participante recebe no total, com a quebra por origem. */
+export interface UserPayout {
+  userId: string;
+  nickname?: string;
+  total: number;
+  breakdown: PayoutBreakdownItem[];
+}
+
+/** Resultado completo do rateio de premiação de uma edição. */
+export interface PayoutResult {
+  byUser: Record<string, UserPayout>;
+  pool: number;        // soma das contribuições
+  distributed: number; // soma de tudo o que foi distribuído
+  perMarketPot: Record<string, number>; // pote final de cada mercado de longo prazo
+}
+
+/** Uma linha de estatística (ex.: Rei da Cravada). */
+export interface StatRow {
+  userId: string;
+  nickname?: string;
+  value: number;
+}
+
+/** Documento persistido com contribuições e gabarito (base da premiação). */
+export interface PayoutsDoc {
+  id: string;
+  editionId: string;
+  contributions: Record<string, number>;
+  gabarito: LongTermGabarito;
+  updatedAt: FireDate;
+}
+
+// ---------------------------------------------------------------------------
+// Feed (mural da edição) — só o organizador posta; membros leem.
+// ---------------------------------------------------------------------------
+export interface FeedPost {
+  id: string;
+  editionId: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: FireDate;
+}

@@ -6,6 +6,7 @@ import {
   increment,
   query,
   serverTimestamp,
+  updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -16,6 +17,7 @@ import type {
   EditionMember,
   EditionPrizes,
   EditionSettings,
+  EditionStatus,
   UserProfile,
 } from '@/types';
 
@@ -147,6 +149,18 @@ export async function listEditionMembers(editionId: string): Promise<EditionMemb
   return snap.docs
     .map((d) => d.data() as EditionMember)
     .sort((a, b) => b.totalPoints - a.totalPoints);
+}
+
+/**
+ * Atualiza o status do ciclo da edição
+ * ('draft' → 'longterm_open' → 'running' → 'finished').
+ * Só o organizador (regras) consegue gravar.
+ */
+export async function setEditionStatus(
+  editionId: string,
+  status: EditionStatus,
+): Promise<void> {
+  await updateDoc(doc(db, 'editions', editionId), { status });
 }
 
 export function isOrganizer(edition: Edition, uid: string): boolean {

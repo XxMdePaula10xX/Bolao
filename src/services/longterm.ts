@@ -1,5 +1,15 @@
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { getEdition } from '@/services/editions';
 import type { LongTermPrediction, UserProfile } from '@/types';
 
 /** Lê os palpites de longo prazo (mercados) de um usuário numa edição. */
@@ -9,6 +19,14 @@ export async function getLongTerm(
 ): Promise<LongTermPrediction | null> {
   const snap = await getDoc(doc(db, 'longTermPredictions', `${editionId}_${uid}`));
   return snap.exists() ? (snap.data() as LongTermPrediction) : null;
+}
+
+/** Lê os palpites de longo prazo de TODOS os participantes da edição. */
+export async function listLongTerm(editionId: string): Promise<LongTermPrediction[]> {
+  const snap = await getDocs(
+    query(collection(db, 'longTermPredictions'), where('editionId', '==', editionId)),
+  );
+  return snap.docs.map((d) => d.data() as LongTermPrediction);
 }
 
 /**
@@ -25,6 +43,13 @@ export async function saveLongTerm(
     bestPlayer?: string | null;
   },
 ): Promise<void> {
+  // Janela de longo prazo: só é editável em 'draft' ou 'longterm_open'.
+  // Após "Iniciar a Copa" ('running') ou 'finished', os palpites travam.
+  const edition = await getEdition(editionId);
+  if (edition && (edition.status === 'running' || edition.status === 'finished')) {
+    throw new Error('A janela de palpites de longo prazo já foi encerrada.');
+  }
+
   const id = `${editionId}_${user.id}`;
   const payload: LongTermPrediction = {
     id,

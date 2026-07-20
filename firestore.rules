@@ -92,6 +92,28 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /payouts/{id} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn()
+        && (isEditionOrganizer(
+              request.resource != null
+                ? request.resource.data.editionId
+                : resource.data.editionId
+            )
+            || isAdmin());
+    }
+
+    match /feedPosts/{id} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn()
+        && (isEditionOrganizer(
+              request.resource != null
+                ? request.resource.data.editionId
+                : resource.data.editionId
+            )
+            || isAdmin());
+    }
+
     match /editionMembers/{memberId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.userId == uid();

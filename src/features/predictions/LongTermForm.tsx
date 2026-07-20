@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getLongTerm, saveLongTerm } from '@/services/longterm';
+import { getEdition } from '@/services/editions';
 import type { UserProfile } from '@/types';
 import { toast } from '@/lib/toast';
 
@@ -33,12 +34,14 @@ export function LongTermForm({ editionId, user }: LongTermFormProps) {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Janela travada quando a Copa já começou ('running') ou terminou ('finished').
+  const [locked, setLocked] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    getLongTerm(editionId, user.id)
-      .then((lt) => {
+    Promise.all([getLongTerm(editionId, user.id), getEdition(editionId)])
+      .then(([lt, edition]) => {
         if (!alive) return;
         if (lt) {
           setForm({
@@ -48,6 +51,7 @@ export function LongTermForm({ editionId, user }: LongTermFormProps) {
             bestPlayer: lt.bestPlayer ?? '',
           });
         }
+        setLocked(edition?.status === 'running' || edition?.status === 'finished');
       })
       .catch((e: unknown) => {
         toast(e instanceof Error ? e.message : 'Erro ao carregar palpites', 'err');
@@ -92,13 +96,26 @@ export function LongTermForm({ editionId, user }: LongTermFormProps) {
   return (
     <div className="stack gap">
       <div className="card" style={{ borderColor: 'var(--purple)' }}>
-        <h2 className="sec" style={{ color: 'var(--purple-2)' }}>
-          Longo Prazo
-        </h2>
+        <div className="row gap" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <h2 className="sec" style={{ color: 'var(--purple-2)' }}>
+            Longo Prazo
+          </h2>
+          {locked && <span className="badge badge-gray">🔒 janela encerrada</span>}
+        </div>
         <p className="muted" style={{ marginTop: 8, fontSize: 14, lineHeight: 1.7 }}>
-          Palpites para os mercados que só fecham no fim da Copa. Você pode alterar
-          enquanto quiser: eles <b style={{ color: 'var(--purple-2)' }}>travam no início da Copa</b>{' '}
-          (primeiro jogo). Por enquanto o preenchimento é em texto livre.
+          {locked ? (
+            <>
+              A Copa já começou: a <b style={{ color: 'var(--purple-2)' }}>janela de palpites de
+              longo prazo está encerrada</b>. Seus palpites abaixo estão travados e valem para a
+              apuração final.
+            </>
+          ) : (
+            <>
+              Palpites para os mercados que só fecham no fim da Copa. Você pode alterar
+              enquanto quiser: eles <b style={{ color: 'var(--purple-2)' }}>travam no início da Copa</b>{' '}
+              (primeiro jogo). Por enquanto o preenchimento é em texto livre.
+            </>
+          )}
         </p>
       </div>
 
@@ -110,15 +127,18 @@ export function LongTermForm({ editionId, user }: LongTermFormProps) {
               type="text"
               value={form[f.key]}
               placeholder={f.placeholder}
+              disabled={locked}
               onChange={(e) => setField(f.key, e.target.value)}
             />
           </div>
         ))}
       </div>
 
-      <button className="btn btn-gold" disabled={saving} onClick={handleSave}>
-        {saving ? 'Salvando...' : 'Salvar longo prazo'}
-      </button>
+      {!locked && (
+        <button className="btn btn-gold" disabled={saving} onClick={handleSave}>
+          {saving ? 'Salvando...' : 'Salvar longo prazo'}
+        </button>
+      )}
     </div>
   );
 }

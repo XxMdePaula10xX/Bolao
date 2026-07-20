@@ -9,15 +9,18 @@ import { RankingGeral } from '@/features/editions/RankingGeral';
 import { LigaTab } from '@/features/league/LigaTab';
 import { CopaTab } from '@/features/cup/CopaTab';
 import { ConsolacaoTab } from '@/features/consolation/ConsolacaoTab';
+import { LongoPrazoTab } from '@/features/longterm/LongoPrazoTab';
+import { EstatisticasTab } from '@/features/stats/EstatisticasTab';
+import { PremiacaoTab } from '@/features/prizes/PremiacaoTab';
+import { FeedTab } from '@/features/feed/FeedTab';
 import { toast } from '@/lib/toast';
 import type { Edition } from '@/types';
 
 const TABS = [
   'Visão geral', 'Regulamento', 'Ranking Geral', 'Participantes',
   'Liga', 'Copa', 'Consolação', 'Longo Prazo', 'Estatísticas',
+  'Premiação', 'Feed',
 ] as const;
-
-const COMING_SOON_TABS = new Set(['Longo Prazo', 'Estatísticas']);
 
 export function EditionPage() {
   const profile = useAuthStore((s) => s.profile);
@@ -147,7 +150,33 @@ export function EditionPage() {
             isOrganizer={isOrganizer(edition, profile.id)}
           />
         )}
-        {COMING_SOON_TABS.has(TABS[tab]) && <ComingSoon name={TABS[tab]} />}
+        {TABS[tab] === 'Longo Prazo' && (
+          <LongoPrazoTab
+            editionId={edition.id}
+            currentUserId={profile.id}
+            isOrganizer={isOrganizer(edition, profile.id)}
+            edition={edition}
+          />
+        )}
+        {TABS[tab] === 'Estatísticas' && (
+          <EstatisticasTab editionId={edition.id} currentUserId={profile.id} />
+        )}
+        {TABS[tab] === 'Premiação' && (
+          <PremiacaoTab
+            editionId={edition.id}
+            currentUserId={profile.id}
+            isOrganizer={isOrganizer(edition, profile.id)}
+            edition={edition}
+          />
+        )}
+        {TABS[tab] === 'Feed' && (
+          <FeedTab
+            editionId={edition.id}
+            currentUserId={profile.id}
+            isOrganizer={isOrganizer(edition, profile.id)}
+            user={profile}
+          />
+        )}
       </div>
     </div>
   );
@@ -227,20 +256,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     <div className="row gap" style={{ justifyContent: 'space-between' }}>
       <span className="muted" style={{ fontSize: 14 }}>{label}</span>
       <span style={{ fontWeight: 700 }}>{value}</span>
-    </div>
-  );
-}
-
-function ComingSoon({ name }: { name: string }) {
-  return (
-    <div className="card">
-      <div className="row gap" style={{ justifyContent: 'space-between' }}>
-        <h2 className="sec">{name}</h2>
-        <span className="badge badge-gray">em breve</span>
-      </div>
-      <p className="muted" style={{ marginTop: 8, fontSize: 14, lineHeight: 1.7 }}>
-        Esta disputa já está modelada no schema e entra nos próximos passos.
-      </p>
     </div>
   );
 }
