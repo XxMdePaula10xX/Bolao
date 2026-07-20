@@ -22,7 +22,10 @@ import {
   cupRoundCount,
   maxCupBlock,
   consolationBlockInfo,
+  resolveKnockout,
+  rankGroupByPoints,
 } from './competition.ts';
+import type { KORound } from '@/types';
 
 // Gerador determinístico (LCG) para testar sorteios sem depender de Math.random.
 function seededRand(seed: number): () => number {
@@ -406,4 +409,150 @@ test('Copa/Consolação: rodadas × bloco máx nunca excede os jogos disponívei
   assert.ok(cupR * maxCupBlock(cupR, 20) <= 20);
   const info = consolationBlockInfo(2, 80, 70);
   assert.ok(2 * info.maxBlock <= info.leftover);
+});
+
+// ---------------------------------------------------------------------------
+// resolveKnockout — resolução ao vivo do mata-mata
+// ---------------------------------------------------------------------------
+test('resolveKnockout: 4 jogadores, 2 rodadas, define campeão', () => {
+  const initial = buildBracket(['a', 'b', 'c', 'd']); // Semi: a vs d, b vs c
+  // Rodada 0 (semi): a > d, c > b. Rodada 1 (final): c > a.
+  const roundPoints: (Record<string, number> | null)[] = [
+    { a: 10, b: 3, c: 8, d: 4 }, // semi
+    { a: 5, c: 9 },              // final
+  ];
+  const leaguePos = { a: 1, b: 2, c: 3, d: 4 };
+  const { rounds, championIds } = resolveKnockout(initial, roundPoints, leaguePos);
+
+  // Semifinal resolvida.
+  const semi = rounds[0];
+  assert.equal(semi.matches[0].winnerId, 'a'); // a vs d
+  assert.equal(semi.matches[1].winnerId, 'c'); // b vs c
+  assert.equal(semi.matches[0].pointsEqual, false);
+
+  // Final: c campeão.
+  const final = rounds[1];
+  assert.deepEqual([final.matches[0].slotA?.userId, final.matches[0].slotB?.userId], ['a', 'c']);
+  assert.equal(final.matches[0].winnerId, 'c');
+  assert.deepEqual(championIds, ['c']);
+});
+
+test('resolveKnockout: não muta os argumentos', () => {
+  const initial = buildBracket(['a', 'b', 'c', 'd']);
+  const snapshot = JSON.stringify(initial);
+  const roundPoints: (Record<string, number> | null)[] = [{ a: 10, b: 3, c: 8, d: 4 }, { a: 5, c: 9 }];
+  resolveKnockout(initial, roundPoints, { a: 1, b: 2, c: 3, d: 4 });
+  assert.equal(JSON.stringify(initial), snapshot, 'entrada intacta');
+});
+
+test('resolveKnockout: para quando o bloco de uma rodada é null', () => {
+  const initial = buildBracket(['a', 'b', 'c', 'd']);
+  // Semi resolvida; final ainda não terminou (null).
+  const roundPoints: (Record<string, number> | null)[] = [
+    { a: 10, b: 3, c: 8, d: 4 },
+    null,
+  ];
+  const { rounds, championIds } = resolveKnockout(initial, roundPoints, { a: 1, b: 2, c: 3, d: 4 });
+
+  // Semi resolvida, mas final "a definir".
+  assert.equal(rounds[0].matches[0].winnerId, 'a');
+  assert.equal(rounds[0].matches[1].winnerId, 'c');
+  // Slots da final propagados (semi resolvida), mas sem winnerId/campeão.
+  const final = rounds[1];
+  assert.deepEqual([final.matches[0].slotA?.userId, final.matches[0].slotB?.userId], ['a', 'c']);
+  assert.ok(!final.matches[0].winnerId, 'final sem vencedor');
+  assert.deepEqual(championIds, [], 'sem campeão ainda');
+});
+
+test('resolveKnockout: para na 1ª rodada quando ela é null (nada resolve)', () => {
+  const initial = buildBracket(['a', 'b', 'c', 'd']);
+  const { rounds, championIds } = resolveKnockout(initial, [null, null], { a: 1, b: 2, c: 3, d: 4 });
+  assert.ok(!rounds[0].matches[0].winnerId);
+  assert.ok(!rounds[0].matches[1].winnerId);
+  assert.deepEqual(championIds, []);
+});
+
+test('resolveKnockout: byes (5 jogadores) avançam direto', () => {
+  const initial = buildBracket(['a', 'b', 'c', 'd', 'e']); // bracket de 8, 3 byes
+  const leaguePos = { a: 1, b: 2, c: 3, d: 4, e: 5 };
+
+  // Quartas: só um confronto real (o par sem bye). Descobre qual é.
+  const quartas = initial[0];
+  const realMatch = quartas.matches.find((m) => m.slotA && m.slotB && !m.byeA && !m.byeB);
+  assert.ok(realMatch, 'há um confronto real nas quartas');
+  const [x, y] = [realMatch!.slotA!.userId, realMatch!.slotB!.userId];
+
+  // Dá a vitória ao de menor leaguePos entre os dois, para determinismo.
+  const winner = leaguePos[x as keyof typeof leaguePos] < leaguePos[y as keyof typeof leaguePos] ? x : y;
+  const q: Record<string, number> = { [x]: winner === x ? 10 : 1, [y]: winner === y ? 10 : 1 };
+
+  // Rodadas seguintes: dá a vitória a 'a' (seed 1, que teve bye).
+  const semiPts: Record<string, number> = { a: 100, b: 0, c: 0, d: 0, e: 0 };
+  const finalPts: Record<string, number> = { a: 100, b: 0, c: 0, d: 0, e: 0 };
+  const { rounds, championIds } = resolveKnockout(initial, [q, semiPts, finalPts], leaguePos);
+
+  // 'a' teve bye nas quartas e deve aparecer na semi.
+  const semiPlayers = rounds[1].matches.flatMap((m) => [m.slotA?.userId, m.slotB?.userId]);
+  assert.ok(semiPlayers.includes('a'), 'bye avançou para a semi');
+  assert.deepEqual(championIds, ['a'], 'a é campeão');
+});
+
+test('resolveKnockout: empate na final → co-campeões (Liga NÃO decide)', () => {
+  const initial = buildBracket(['a', 'b', 'c', 'd']);
+  const roundPoints: (Record<string, number> | null)[] = [
+    { a: 10, b: 3, c: 8, d: 4 }, // semi: a e c passam
+    { a: 7, c: 7 },              // FINAL empatada em pontos
+  ];
+  const leaguePos = { a: 1, b: 2, c: 3, d: 4 }; // a tem posição melhor
+  const { rounds, championIds } = resolveKnockout(initial, roundPoints, leaguePos);
+
+  const final = rounds[1].matches[0];
+  assert.equal(final.pointsEqual, true);
+  assert.equal(final.coChampions, true);
+  assert.ok(!final.winnerId, 'sem vencedor único na final empatada');
+  assert.deepEqual([...championIds].sort(), ['a', 'c'], 'os dois são co-campeões');
+});
+
+test('resolveKnockout: empate FORA da final é decidido pela Liga', () => {
+  const initial = buildBracket(['a', 'b', 'c', 'd']);
+  // Semi 0 (a vs d) empata em pontos → melhor posição (a, pos 1) avança.
+  const roundPoints: (Record<string, number> | null)[] = [
+    { a: 5, d: 5, b: 3, c: 8 },
+    { a: 9, c: 1 },
+  ];
+  const leaguePos = { a: 1, b: 2, c: 3, d: 4 };
+  const { rounds, championIds } = resolveKnockout(initial, roundPoints, leaguePos);
+  assert.equal(rounds[0].matches[0].pointsEqual, true);
+  assert.equal(rounds[0].matches[0].winnerId, 'a', 'empate na semi → Liga decide (a)');
+  assert.ok(!rounds[0].matches[0].coChampions, 'coChampions só na final');
+  assert.deepEqual(championIds, ['a']);
+});
+
+// ---------------------------------------------------------------------------
+// rankGroupByPoints
+// ---------------------------------------------------------------------------
+test('rankGroupByPoints: ordena por pontos (desc)', () => {
+  const order = rankGroupByPoints(
+    ['a', 'b', 'c', 'd'],
+    { a: 5, b: 12, c: 8, d: 1 },
+    { a: 1, b: 2, c: 3, d: 4 },
+  );
+  assert.deepEqual(order, ['b', 'c', 'a', 'd']);
+});
+
+test('rankGroupByPoints: empate de pontos → melhor posição na Liga', () => {
+  const order = rankGroupByPoints(
+    ['a', 'b', 'c'],
+    { a: 8, b: 8, c: 3 },
+    { a: 6, b: 2, c: 9 }, // b tem posição melhor que a
+  );
+  assert.deepEqual(order, ['b', 'a', 'c']);
+});
+
+test('rankGroupByPoints: não muta a entrada e é estável', () => {
+  const members = ['a', 'b'];
+  const copy = members.slice();
+  const order = rankGroupByPoints(members, { a: 5, b: 5 }, { a: 3, b: 3 });
+  assert.deepEqual(members, copy, 'entrada intacta');
+  assert.deepEqual(order, ['a', 'b'], 'empate total mantém ordem de entrada');
 });

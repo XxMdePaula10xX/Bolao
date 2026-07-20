@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { getCup, drawCup, qualifyGroups, resolveCupRound } from '@/services/cup';
-import { getLeague } from '@/services/league';
+import { getCup, drawCup, drawCupKnockout, computeCupLive } from '@/services/cup';
+import type { CupLive } from '@/services/cup';
 import { listEditionMembers } from '@/services/editions';
 import { listMatches } from '@/services/matches';
-import { splitIntoBlocks } from '@/lib/competition';
+import { cupRoundCount, maxCupBlock } from '@/lib/competition';
 import { toast } from '@/lib/toast';
-import type { BracketDoc, EditionMember, KOMatch, KORound, Match, FireDate } from '@/types';
+import type { EditionMember, KOMatch, KORound } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,35 +16,11 @@ function initials(name: string): string {
   return raw.toUpperCase();
 }
 
-function toMillis(value: FireDate): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
-}
-
-function formatDate(value: FireDate): string {
-  const ms = toMillis(value);
-  if (!ms) return 'A definir';
-  return new Date(ms).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/** Quantos classificados por grupo, respeitando grupos menores. */
-function estimateQualified(total: number, groupSize: number, per: number): { groups: number; qualified: number } {
+/** Nº de grupos e classificados (regra da fase de grupos: ceil(N/grupo) grupos). */
+function groupsPreview(total: number, groupSize: number, per: number): { groups: number; qualified: number } {
   if (total <= 0 || groupSize <= 0) return { groups: 0, qualified: 0 };
   const groups = Math.ceil(total / groupSize);
-  let qualified = 0;
-  let remaining = total;
-  for (let i = 0; i < groups; i++) {
-    const size = Math.min(groupSize, remaining);
-    qualified += Math.min(per, size);
-    remaining -= size;
-  }
-  return { groups, qualified };
+  return { groups, qualified: groups * Math.max(1, per) };
 }
 
 interface Props {
@@ -55,104 +30,162 @@ interface Props {
 }
 
 export function CopaTab({ editionId, currentUserId, isOrganizer }: Props) {
-  const [cup, setCup] = useState<BracketDoc | null | undefined>(undefined);
+  const [cupExists, setCupExists] = useState<boolean | null>(null); // null = carregando
+  const [live, setLive] = useState<CupLive | null>(null);
   const [members, setMembers] = useState<EditionMember[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [matchesPerRound, setMatchesPerRound] = useState(4);
+  const [totalGames, setTotalGames] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [drawingKO, setDrawingKO] = useState(false);
 
-  const reloadCup = useCallback(async () => {
-    const c = await getCup(editionId);
-    setCup(c);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const [cup, mem, mt] = await Promise.all([
+        getCup(editionId),
+        listEditionMembers(editionId),
+        listMatches(editionId),
+      ]);
+      setMembers(mem);
+      setTotalGames(mt.length);
+      setCupExists(!!cup);
+      if (cup) {
+        setLive(await computeCupLive(editionId));
+      } else {
+        setLive(null);
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }, [editionId]);
 
   useEffect(() => {
     let alive = true;
-    setCup(undefined);
-    setError(false);
-    Promise.all([getCup(editionId), listEditionMembers(editionId), listMatches(editionId), getLeague(editionId)])
-      .then(([c, mem, mt, lg]) => {
-        if (!alive) return;
-        setCup(c);
-        setMembers(mem);
-        setMatches(mt);
-        setMatchesPerRound(lg?.matchesPerRound ?? 4);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setError(true);
-        setCup(null);
-      });
+    (async () => {
+      if (!alive) return;
+      await load();
+    })();
     return () => {
       alive = false;
     };
-  }, [editionId]);
+  }, [load]);
 
   const nicknameOf = useMemo(() => {
     const map: Record<string, string> = {};
     for (const m of members) map[m.userId] = m.nickname;
-    return (userId: string) => map[userId] ?? userId.slice(0, 6);
+    return (userId: string) => map[userId] ?? 'Participante';
   }, [members]);
 
-  if (error) {
-    return <div className="card muted">Não foi possível carregar a Copa.</div>;
+  async function handleDrawKnockout() {
+    setDrawingKO(true);
+    try {
+      await drawCupKnockout(editionId);
+      toast('Mata-mata sorteado! 🏆', 'ok');
+      await load();
+    } catch {
+      toast('Não foi possível sortear o mata-mata. A fase de grupos já terminou?', 'err');
+    } finally {
+      setDrawingKO(false);
+    }
   }
-  if (cup === undefined) {
-    return <div className="loading"><div className="spinner" /></div>;
+
+  if (loading) {
+    return (
+      <div className="loading">
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="card muted">
+        Não foi possível carregar a Copa.{' '}
+        <button className="btn btn-ghost" onClick={load} style={{ width: 'auto', marginTop: 10 }}>
+          Tentar novamente
+        </button>
+      </div>
+    );
   }
 
   // --- Sem Copa sorteada ---
-  if (!cup) {
+  if (!cupExists) {
     if (!isOrganizer) {
       return (
         <div className="card">
-          <h2 className="sec">Copa</h2>
+          <div className="row gap" style={{ justifyContent: 'space-between' }}>
+            <h2 className="sec">Copa</h2>
+            <span className="badge badge-gray">aguardando sorteio</span>
+          </div>
           <p className="muted" style={{ marginTop: 8, fontSize: 14, lineHeight: 1.7 }}>
-            A Copa ainda não foi sorteada. Quando o organizador montar o chaveamento, ele aparece aqui.
+            A Copa ainda não foi sorteada. Ela corre junto com a Liga, usando os mesmos jogos.
+            Quando o organizador montar o chaveamento, ele aparece aqui.
           </p>
         </div>
       );
     }
-    return <CupSetup members={members} onDone={reloadCup} editionId={editionId} />;
+    return (
+      <CupSetup members={members} totalGames={totalGames} editionId={editionId} onDone={load} />
+    );
   }
 
-  const groupsPending = cup.format === 'groups' && (!cup.rounds || cup.rounds.length === 0);
+  // --- Com Copa: estado ao vivo ---
+  if (!live) {
+    return <div className="card muted">Copa indisponível.</div>;
+  }
+
+  const champions = live.championIds ?? [];
 
   return (
     <div className="stack gap">
-      <ChampionBanner cup={cup} nicknameOf={nicknameOf} />
-
-      {cup.format === 'groups' && cup.groups && cup.groups.length > 0 && (
-        <GroupsView cup={cup} nicknameOf={nicknameOf} currentUserId={currentUserId} />
+      {champions.length > 0 && (
+        <ChampionBanner championIds={champions} nicknameOf={nicknameOf} currentUserId={currentUserId} />
       )}
 
-      {groupsPending ? (
-        isOrganizer ? (
-          <QualifySection
-            editionId={editionId}
-            cup={cup}
-            matches={matches}
-            matchesPerRound={matchesPerRound}
-            onDone={reloadCup}
-          />
-        ) : (
-          <div className="card muted" style={{ fontSize: 14 }}>
-            Fase de grupos em andamento. O mata-mata é sorteado quando o organizador encerrar os grupos.
-          </div>
-        )
-      ) : (
-        <>
-          <Bracket rounds={cup.rounds} nicknameOf={nicknameOf} currentUserId={currentUserId} />
-          {isOrganizer && (
-            <ResolveRounds
-              editionId={editionId}
-              cup={cup}
-              matches={matches}
-              matchesPerRound={matchesPerRound}
-              onDone={reloadCup}
-            />
+      {live.format === 'groups' && live.groups && live.groups.length > 0 && (
+        <GroupsView live={live} currentUserId={currentUserId} />
+      )}
+
+      {live.format === 'groups' && !live.koDrawn && (
+        <div className="card">
+          {live.groupPhaseComplete ? (
+            isOrganizer ? (
+              <>
+                <h2 className="sec">Fase de grupos encerrada</h2>
+                <p className="muted" style={{ margin: '8px 0 14px', fontSize: 14, lineHeight: 1.6 }}>
+                  Todos os jogos da fase de grupos terminaram. Sorteie o mata-mata entre os
+                  classificados para começar as eliminatórias.
+                </p>
+                <button
+                  className="btn btn-gold"
+                  onClick={handleDrawKnockout}
+                  disabled={drawingKO}
+                  style={{ width: 'auto' }}
+                >
+                  {drawingKO ? 'Sorteando…' : 'Sortear mata-mata dos classificados'}
+                </button>
+              </>
+            ) : (
+              <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
+                Fase de grupos encerrada. O mata-mata começa quando o organizador sortear os
+                classificados.
+              </p>
+            )
+          ) : (
+            <p className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
+              Fase de grupos em andamento. A classificação é atualizada automaticamente conforme
+              os jogos terminam. Quando todos os jogos da fase de grupos acabarem, o mata-mata é
+              sorteado entre os classificados.
+            </p>
           )}
-        </>
+        </div>
+      )}
+
+      {(live.format === 'knockout' || live.koDrawn) && (
+        <Bracket rounds={live.koRounds} nicknameOf={nicknameOf} currentUserId={currentUserId} />
       )}
     </div>
   );
@@ -163,23 +196,48 @@ export function CopaTab({ editionId, currentUserId, isOrganizer }: Props) {
 // ---------------------------------------------------------------------------
 function CupSetup({
   members,
+  totalGames,
   editionId,
   onDone,
 }: {
   members: EditionMember[];
+  totalGames: number;
   editionId: string;
   onDone: () => void;
 }) {
   const [format, setFormat] = useState<'knockout' | 'groups'>('knockout');
   const [groupSize, setGroupSize] = useState(4);
   const [qualifiersPerGroup, setQualifiersPerGroup] = useState(2);
+  const [blockChoice, setBlockChoice] = useState(2);
   const [busy, setBusy] = useState(false);
 
   const total = members.length;
-  const preview = estimateQualified(total, groupSize, qualifiersPerGroup);
+
+  const rounds = useMemo(
+    () =>
+      cupRoundCount(
+        format,
+        total,
+        format === 'groups' ? groupSize : undefined,
+        format === 'groups' ? qualifiersPerGroup : undefined,
+      ),
+    [format, total, groupSize, qualifiersPerGroup],
+  );
+  const maxBlock = maxCupBlock(rounds, totalGames);
+  const preview = groupsPreview(total, groupSize, qualifiersPerGroup);
+
+  const enoughMembers = total >= 2;
+  const groupsValid =
+    format !== 'groups' || (groupSize >= 2 && qualifiersPerGroup >= 1 && qualifiersPerGroup < groupSize);
+  const enoughGames = maxBlock >= 1;
+  const feasible = enoughMembers && groupsValid && enoughGames;
+
+  // Bloco efetivo (travado em [1, maxBlock]).
+  const block = Math.max(1, Math.min(blockChoice, maxBlock || 1));
+  const used = rounds * block;
 
   async function handleDraw() {
-    if (total < 2) {
+    if (!enoughMembers) {
       toast('São necessários ao menos 2 participantes.', 'err');
       return;
     }
@@ -189,6 +247,11 @@ function CupSetup({
         return toast('Classificados por grupo deve ser entre 1 e o tamanho do grupo − 1.', 'err');
       }
     }
+    if (!enoughGames) {
+      toast('Jogos insuficientes para montar a Copa.', 'err');
+      return;
+    }
+
     setBusy(true);
     try {
       const nicknames: Record<string, string> = {};
@@ -198,6 +261,7 @@ function CupSetup({
         editionId,
         memberIds,
         format === 'groups' ? { format, groupSize, qualifiersPerGroup } : { format: 'knockout' },
+        block,
         nicknames,
       );
       toast('Copa sorteada! 🏆', 'ok');
@@ -213,8 +277,10 @@ function CupSetup({
     <div className="card">
       <h2 className="sec">Montar a Copa</h2>
       <p className="muted" style={{ margin: '8px 0 16px', fontSize: 14, lineHeight: 1.6 }}>
-        {total} participante{total === 1 ? '' : 's'}. Escolha o formato e faça o sorteio — depois é só definir
-        quais jogos decidem cada fase.
+        A Copa corre <b style={{ color: 'var(--txt)' }}>junto com a Liga</b>, usando os mesmos
+        jogos (em ordem). Cada confronto soma os pontos de um{' '}
+        <b style={{ color: 'var(--txt)' }}>bloco de jogos</b> consecutivos: quem fizer mais pontos
+        avança. {total} participante{total === 1 ? '' : 's'}.
       </p>
 
       <div className="field">
@@ -238,12 +304,7 @@ function CupSetup({
       {format === 'groups' && (
         <>
           <div className="row gap-sm" style={{ flexWrap: 'wrap' }}>
-            <NumField
-              label="Participantes por grupo"
-              value={groupSize}
-              min={2}
-              onChange={setGroupSize}
-            />
+            <NumField label="Participantes por grupo" value={groupSize} min={2} onChange={setGroupSize} />
             <NumField
               label="Classificam por grupo"
               value={qualifiersPerGroup}
@@ -251,10 +312,7 @@ function CupSetup({
               onChange={setQualifiersPerGroup}
             />
           </div>
-          <div
-            className="card"
-            style={{ background: 'var(--bg-elev)', padding: 12, marginBottom: 14 }}
-          >
+          <div className="card" style={{ background: 'var(--bg-elev)', padding: 12, marginBottom: 14 }}>
             <p className="muted" style={{ fontSize: 13, lineHeight: 1.7 }}>
               Com <b style={{ color: 'var(--txt)' }}>{total}</b> participantes e grupos de{' '}
               <b style={{ color: 'var(--txt)' }}>{groupSize}</b> →{' '}
@@ -267,9 +325,53 @@ function CupSetup({
         </>
       )}
 
-      <button className="btn btn-gold" disabled={busy} onClick={handleDraw}>
-        {busy ? 'Sorteando…' : 'Sortear Copa'}
-      </button>
+      {/* Resumo de blocos */}
+      <div className="card" style={{ background: 'var(--bg-elev)', marginTop: 4 }}>
+        <div className="stack gap-sm" style={{ fontSize: 14 }}>
+          <Info label="Confrontos (rodadas)" value={rounds ? `${rounds}` : '—'} />
+          <Info label="Jogos cadastrados" value={`${totalGames}`} />
+          <Info label="Bloco máximo por confronto" value={enoughGames ? `${maxBlock} jogos` : '—'} highlight />
+        </div>
+      </div>
+
+      {!enoughMembers && (
+        <p className="muted" style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>
+          São necessários ao menos 2 participantes.
+        </p>
+      )}
+      {enoughMembers && groupsValid && !enoughGames && (
+        <p className="muted" style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>
+          Jogos insuficientes: a Copa tem {rounds} confronto{rounds === 1 ? '' : 's'}, então é
+          preciso cadastrar ao menos {rounds} jogo{rounds === 1 ? '' : 's'} (1 por confronto). Há{' '}
+          {totalGames}. Cadastre mais jogos na aba Admin.
+        </p>
+      )}
+
+      {feasible && (
+        <>
+          <div className="field" style={{ marginTop: 14 }}>
+            <label>Jogos por confronto (bloco)</label>
+            <input
+              type="number"
+              min={1}
+              max={maxBlock}
+              value={block}
+              onChange={(e) => {
+                const v = Math.round(Number(e.target.value) || 1);
+                setBlockChoice(Math.max(1, Math.min(v, maxBlock)));
+              }}
+            />
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.6 }}>
+              Entre 1 e {maxBlock}. Serão usados {rounds} × {block} ={' '}
+              <b style={{ color: 'var(--txt)' }}>{used}</b> jogos nos confrontos
+              {totalGames - used > 0 && ` (os ${totalGames - used} últimos ficam fora da Copa)`}.
+            </p>
+          </div>
+          <button className="btn btn-gold" disabled={busy} onClick={handleDraw} style={{ marginTop: 4 }}>
+            {busy ? 'Sorteando…' : 'Sortear Copa'}
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -302,7 +404,9 @@ function FormatCard({
       <div className="disp" style={{ fontSize: 15, fontWeight: 700, color: active ? 'var(--gold)' : 'var(--txt)' }}>
         {title}
       </div>
-      <div className="muted" style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>{desc}</div>
+      <div className="muted" style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>
+        {desc}
+      </div>
     </button>
   );
 }
@@ -320,9 +424,7 @@ function NumField({
 }) {
   return (
     <label className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
-      <span
-        style={{ display: 'block', color: 'var(--txt-2)', fontSize: 13, fontWeight: 600, marginBottom: 6 }}
-      >
+      <span style={{ display: 'block', color: 'var(--txt-2)', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
         {label}
       </span>
       <input
@@ -339,12 +441,28 @@ function NumField({
   );
 }
 
+function Info({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="row gap" style={{ justifyContent: 'space-between' }}>
+      <span className="muted">{label}</span>
+      <span style={{ fontWeight: 700, color: highlight ? 'var(--gold)' : 'var(--txt)' }}>{value}</span>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Banner de campeão / co-campeões
 // ---------------------------------------------------------------------------
-function ChampionBanner({ cup, nicknameOf }: { cup: BracketDoc; nicknameOf: (id: string) => string }) {
-  if (!cup.championIds || cup.championIds.length === 0) return null;
-  const co = cup.championIds.length > 1;
+function ChampionBanner({
+  championIds,
+  nicknameOf,
+  currentUserId,
+}: {
+  championIds: string[];
+  nicknameOf: (id: string) => string;
+  currentUserId: string;
+}) {
+  const co = championIds.length > 1;
   return (
     <div
       className="card"
@@ -358,7 +476,10 @@ function ChampionBanner({ cup, nicknameOf }: { cup: BracketDoc; nicknameOf: (id:
         {co ? '🏆 Co-campeões da Copa' : '🏆 Campeão da Copa'}
       </div>
       <div className="disp" style={{ fontSize: 24, fontWeight: 700, marginTop: 6, color: 'var(--txt)' }}>
-        {cup.championIds.map((id) => nicknameOf(id)).join('  &  ')}
+        {championIds.map((id) => nicknameOf(id)).join('  &  ')}
+        {championIds.includes(currentUserId) && (
+          <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}> (você)</span>
+        )}
       </div>
       {co && (
         <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
@@ -370,49 +491,90 @@ function ChampionBanner({ cup, nicknameOf }: { cup: BracketDoc; nicknameOf: (id:
 }
 
 // ---------------------------------------------------------------------------
-// Fase de grupos — visão
+// Fase de grupos — classificação ao vivo
 // ---------------------------------------------------------------------------
-function GroupsView({
-  cup,
-  nicknameOf,
-  currentUserId,
-}: {
-  cup: BracketDoc;
-  nicknameOf: (id: string) => string;
-  currentUserId: string;
-}) {
-  if (!cup.groups) return null;
+function GroupsView({ live, currentUserId }: { live: CupLive; currentUserId: string }) {
+  if (!live.groups) return null;
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
-        <h2 className="sec">Grupos</h2>
+        <div className="row gap" style={{ justifyContent: 'space-between' }}>
+          <h2 className="sec">Fase de grupos</h2>
+          <span className={`badge ${live.groupPhaseComplete ? 'badge-green' : 'badge-blue'}`}>
+            {live.groupPhaseComplete ? 'encerrada' : 'ao vivo'}
+          </span>
+        </div>
         <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
-          Classificam {cup.qualifiersPerGroup ?? 1} de cada grupo.
+          Classificação pela soma dos pontos na fase de grupos. Empate desempata pela posição na
+          Liga.
         </p>
       </div>
       <div
         style={{
           display: 'grid',
           gap: 12,
-          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
           padding: 16,
         }}
       >
-        {cup.groups.map((g) => (
+        {live.groups.map((g) => (
           <div
             key={g.name}
             style={{
               background: 'var(--bg-elev)',
               border: '1px solid var(--line)',
               borderRadius: 'var(--radius-sm)',
-              padding: 12,
+              overflow: 'hidden',
             }}
           >
-            <div className="disp" style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>{g.name}</div>
-            <div className="stack gap-sm">
-              {g.memberIds.map((id) => (
-                <PlayerRow key={id} name={nicknameOf(id)} me={id === currentUserId} />
-              ))}
+            <div className="disp" style={{ fontSize: 14, fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--line-soft)' }}>
+              {g.name}
+            </div>
+            <div className="stack">
+              {g.standings.map((s) => {
+                const me = s.userId === currentUserId;
+                return (
+                  <div
+                    key={s.userId}
+                    className="row gap-sm"
+                    style={{
+                      padding: '8px 12px',
+                      gap: 8,
+                      borderTop: '1px solid var(--line-soft)',
+                      background: me ? 'rgba(244,196,48,.08)' : s.qualified ? 'rgba(0,214,143,.06)' : 'transparent',
+                    }}
+                  >
+                    <span
+                      className="tnum muted"
+                      style={{ flex: '0 0 18px', fontSize: 12, textAlign: 'center', fontWeight: 700 }}
+                    >
+                      {s.position}
+                    </span>
+                    <div className="avatar" style={{ width: 24, height: 24, fontSize: 9, flex: '0 0 auto' }}>
+                      {initials(s.nickname)}
+                    </div>
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 13,
+                        fontWeight: s.qualified ? 700 : 600,
+                        color: s.qualified ? 'var(--green)' : 'var(--txt)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {s.qualified && '✔ '}
+                      {s.nickname}
+                      {me && <span className="muted" style={{ fontWeight: 400 }}> (você)</span>}
+                    </span>
+                    <span className="tnum" style={{ flex: '0 0 auto', fontSize: 13, fontWeight: 700, color: 'var(--txt-2)' }}>
+                      {s.points}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -421,28 +583,8 @@ function GroupsView({
   );
 }
 
-function PlayerRow({ name, me }: { name: string; me?: boolean }) {
-  return (
-    <div className="row gap-sm" style={{ minWidth: 0 }}>
-      <div className="avatar" style={{ width: 26, height: 26, fontSize: 10 }}>{initials(name)}</div>
-      <span
-        style={{
-          fontWeight: 600,
-          fontSize: 13.5,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {name}
-        {me && <span className="muted" style={{ fontWeight: 400 }}> (você)</span>}
-      </span>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Chaveamento (bracket)
+// Chaveamento (bracket) — colunas roláveis
 // ---------------------------------------------------------------------------
 function Bracket({
   rounds,
@@ -454,12 +596,19 @@ function Bracket({
   currentUserId: string;
 }) {
   if (!rounds || rounds.length === 0) {
-    return <div className="card muted" style={{ fontSize: 14 }}>Chaveamento ainda não definido.</div>;
+    return (
+      <div className="card muted" style={{ fontSize: 14 }}>
+        Chaveamento ainda não definido.
+      </div>
+    );
   }
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
         <h2 className="sec">Chaveamento</h2>
+        <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+          Atualizado automaticamente conforme os jogos de cada bloco terminam.
+        </p>
       </div>
       <div style={{ overflowX: 'auto', padding: 16 }}>
         <div className="row" style={{ gap: 16, alignItems: 'stretch', minWidth: 'min-content' }}>
@@ -470,7 +619,13 @@ function Bracket({
               </div>
               <div className="stack" style={{ gap: 12, justifyContent: 'space-around', height: 'calc(100% - 26px)' }}>
                 {round.matches.map((m) => (
-                  <BracketMatch key={m.id} match={m} nicknameOf={nicknameOf} currentUserId={currentUserId} isFinal={ri === rounds.length - 1} />
+                  <BracketMatch
+                    key={m.id}
+                    match={m}
+                    nicknameOf={nicknameOf}
+                    currentUserId={currentUserId}
+                    isFinal={ri === rounds.length - 1}
+                  />
                 ))}
               </div>
             </div>
@@ -521,6 +676,15 @@ function BracketMatch({
         nicknameOf={nicknameOf}
         currentUserId={currentUserId}
       />
+      {match.pointsEqual && !co && (
+        <div
+          className="badge badge-blue"
+          style={{ margin: '6px 8px', fontSize: 10 }}
+          title="Desempate pela posição na Liga"
+        >
+          desempate
+        </div>
+      )}
     </div>
   );
 }
@@ -542,7 +706,7 @@ function BracketSlot({
   nicknameOf: (id: string) => string;
   currentUserId: string;
 }) {
-  const name = slot ? nicknameOf(slot.userId) : bye ? 'Folga' : 'A definir';
+  const name = slot ? slot.nickname ?? nicknameOf(slot.userId) : bye ? 'Folga' : 'A definir';
   const me = slot?.userId === currentUserId;
   const highlight = winner || coWinner;
   return (
@@ -570,294 +734,10 @@ function BracketSlot({
         {me && slot && <span className="muted" style={{ fontWeight: 400 }}> (você)</span>}
       </span>
       {points != null && (
-        <span
-          className="tnum"
-          style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt-2)', flex: '0 0 auto' }}
-        >
+        <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt-2)', flex: '0 0 auto' }}>
           {points}
         </span>
       )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Seletor de jogos (multiseleção OU bloco/rodada)
-// ---------------------------------------------------------------------------
-function MatchPicker({
-  matches,
-  matchesPerRound,
-  actionLabel,
-  hint,
-  busy,
-  onConfirm,
-}: {
-  matches: Match[];
-  matchesPerRound: number;
-  actionLabel: string;
-  hint: string;
-  busy: boolean;
-  onConfirm: (matchIds: string[]) => void;
-}) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  // matches já vem ordenado por startTime (listMatches). Blocos = rodadas da Liga.
-  const blocks = useMemo(
-    () => splitIntoBlocks(matches.map((m) => m.id), matchesPerRound),
-    [matches, matchesPerRound],
-  );
-  const byId = useMemo(() => {
-    const map: Record<string, Match> = {};
-    for (const m of matches) map[m.id] = m;
-    return map;
-  }, [matches]);
-
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function selectBlock(ids: string[]) {
-    // seleciona apenas os jogos encerrados do bloco (só eles pontuam)
-    const finished = ids.filter((id) => byId[id]?.status === 'finished');
-    setSelected((prev) => {
-      const next = new Set(prev);
-      const allIn = finished.length > 0 && finished.every((id) => next.has(id));
-      for (const id of finished) {
-        if (allIn) next.delete(id);
-        else next.add(id);
-      }
-      return next;
-    });
-  }
-
-  const finishedCount = matches.filter((m) => m.status === 'finished').length;
-
-  if (matches.length === 0) {
-    return <p className="muted" style={{ fontSize: 13 }}>Nenhum jogo cadastrado ainda.</p>;
-  }
-
-  return (
-    <div>
-      <p className="muted" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 10 }}>{hint}</p>
-      <div className="stack gap-sm">
-        {blocks.map((ids, bi) => {
-          const finishedInBlock = ids.filter((id) => byId[id]?.status === 'finished');
-          const allIn = finishedInBlock.length > 0 && finishedInBlock.every((id) => selected.has(id));
-          return (
-            <div
-              key={bi}
-              style={{
-                background: 'var(--bg-elev)',
-                border: '1px solid var(--line)',
-                borderRadius: 'var(--radius-sm)',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                className="row"
-                style={{
-                  justifyContent: 'space-between',
-                  gap: 8,
-                  padding: '8px 12px',
-                  borderBottom: '1px solid var(--line-soft)',
-                }}
-              >
-                <span className="disp muted" style={{ fontSize: 12, letterSpacing: 1 }}>Rodada {bi + 1}</span>
-                <button
-                  type="button"
-                  onClick={() => selectBlock(ids)}
-                  disabled={finishedInBlock.length === 0}
-                  className="disp"
-                  style={{
-                    background: 'transparent',
-                    border: `1px solid ${allIn ? 'var(--gold)' : 'var(--line)'}`,
-                    color: allIn ? 'var(--gold)' : 'var(--txt-2)',
-                    borderRadius: 999,
-                    padding: '3px 10px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    opacity: finishedInBlock.length === 0 ? 0.4 : 1,
-                  }}
-                >
-                  {allIn ? 'Rodada ✓' : 'Selecionar rodada'}
-                </button>
-              </div>
-              <div className="stack">
-                {ids.map((id) => {
-                  const m = byId[id];
-                  if (!m) return null;
-                  const finished = m.status === 'finished';
-                  const on = selected.has(id);
-                  return (
-                    <label
-                      key={id}
-                      className="row gap-sm"
-                      style={{
-                        padding: '8px 12px',
-                        gap: 10,
-                        cursor: finished ? 'pointer' : 'not-allowed',
-                        opacity: finished ? 1 : 0.45,
-                        borderTop: '1px solid var(--line-soft)',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        disabled={!finished}
-                        onChange={() => toggle(id)}
-                        style={{ width: 17, height: 17, accentColor: 'var(--gold)', flex: '0 0 auto' }}
-                      />
-                      <span style={{ fontSize: 18, flex: '0 0 auto' }}>{m.homeTeam.flag ?? '🏳️'}</span>
-                      <span style={matchName}>{m.homeTeam.name}</span>
-                      <span className="tnum muted" style={{ flex: '0 0 auto', fontSize: 13 }}>
-                        {finished ? `${m.homeScore} × ${m.awayScore}` : 'vs'}
-                      </span>
-                      <span style={{ ...matchName, textAlign: 'right' }}>{m.awayTeam.name}</span>
-                      <span style={{ fontSize: 18, flex: '0 0 auto' }}>{m.awayTeam.flag ?? '🏳️'}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="row" style={{ justifyContent: 'space-between', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-        <span className="muted" style={{ fontSize: 12 }}>
-          {selected.size} jogo{selected.size === 1 ? '' : 's'} selecionado{selected.size === 1 ? '' : 's'}
-          {finishedCount === 0 && ' · nenhum jogo encerrado ainda'}
-        </span>
-        <button
-          className="btn btn-gold"
-          style={{ width: 'auto' }}
-          disabled={busy || selected.size === 0}
-          onClick={() => onConfirm([...selected])}
-        >
-          {busy ? '…' : actionLabel}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const matchName: CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  fontSize: 13,
-  fontWeight: 600,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-// ---------------------------------------------------------------------------
-// Classificar grupos (organizador)
-// ---------------------------------------------------------------------------
-function QualifySection({
-  editionId,
-  cup,
-  matches,
-  matchesPerRound,
-  onDone,
-}: {
-  editionId: string;
-  cup: BracketDoc;
-  matches: Match[];
-  matchesPerRound: number;
-  onDone: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-
-  async function handle(matchIds: string[]) {
-    setBusy(true);
-    try {
-      await qualifyGroups(editionId, matchIds);
-      toast('Grupos classificados! Mata-mata sorteado.', 'ok');
-      onDone();
-    } catch {
-      toast('Não foi possível classificar os grupos.', 'err');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h2 className="sec">Encerrar fase de grupos</h2>
-      <MatchPicker
-        matches={matches}
-        matchesPerRound={matchesPerRound}
-        actionLabel="Classificar grupos"
-        busy={busy}
-        hint={`Escolha os jogos do período que valem para os grupos. Os pontos de cada participante nesses jogos definem quem se classifica (${cup.qualifiersPerGroup ?? 1} por grupo). Depois o mata-mata é sorteado entre os classificados.`}
-        onConfirm={handle}
-      />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Resolver rodadas do mata-mata (organizador)
-// ---------------------------------------------------------------------------
-function isRoundResolvable(round: KORound): boolean {
-  return round.matches.some((m) => m.slotA?.userId && m.slotB?.userId && m.winnerId == null);
-}
-
-function ResolveRounds({
-  editionId,
-  cup,
-  matches,
-  matchesPerRound,
-  onDone,
-}: {
-  editionId: string;
-  cup: BracketDoc;
-  matches: Match[];
-  matchesPerRound: number;
-  onDone: () => void;
-}) {
-  const [busyRound, setBusyRound] = useState<number | null>(null);
-
-  const resolvable = cup.rounds
-    .map((round, index) => ({ round, index }))
-    .filter(({ round }) => isRoundResolvable(round));
-
-  if (resolvable.length === 0) return null;
-
-  async function handle(roundIndex: number, matchIds: string[]) {
-    setBusyRound(roundIndex);
-    try {
-      await resolveCupRound(editionId, roundIndex, matchIds);
-      toast('Rodada resolvida!', 'ok');
-      onDone();
-    } catch {
-      toast('Não foi possível resolver a rodada.', 'err');
-    } finally {
-      setBusyRound(null);
-    }
-  }
-
-  return (
-    <div className="stack gap">
-      {resolvable.map(({ round, index }) => (
-        <div key={index} className="card">
-          <h2 className="sec">Resolver — {round.stage}</h2>
-          <MatchPicker
-            matches={matches}
-            matchesPerRound={matchesPerRound}
-            actionLabel={`Resolver ${round.stage}`}
-            busy={busyRound === index}
-            hint="Escolha os jogos que decidem esta fase. Quem somar mais pontos neles avança; empate desempata pela posição na Liga."
-            onConfirm={(ids) => handle(index, ids)}
-          />
-        </div>
-      ))}
     </div>
   );
 }

@@ -149,6 +149,13 @@ export interface BracketDoc {
   qualifiersPerGroup?: number;
   rounds: KORound[];
   championIds?: string[]; // 1 campeão, ou 2 se co-campeões
+  // Modelo de blocos (opção B — automático):
+  block?: number;            // jogos por confronto (bloco travado)
+  seedOrder?: string[];      // ordem sorteada dos participantes (mata-mata puro)
+  koSeedOrder?: string[];    // classificados sorteados p/ o mata-mata dos grupos
+  koDrawn?: boolean;         // já houve o sorteio do mata-mata dos grupos?
+  startGameIndex?: number;   // índice do 1º jogo da janela (Consolação)
+  overlapsLiga?: boolean;    // a janela da Consolação sobrepõe o fim da Liga?
   createdAt: FireDate;
 }
 

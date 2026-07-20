@@ -1,6 +1,14 @@
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
-import { buildBracket, propagateBracket, resolveConfronto, distributeGroups, shuffle } from '@/lib/competition';
+import {
+  buildBracket,
+  distributeGroups,
+  rankGroupByPoints,
+  resolveKnockout,
+  roundRobinRounds,
+  shuffle,
+  splitIntoBlocks,
+} from '@/lib/competition';
 import {
   decorateSlots,
   fetchNicknames,
@@ -8,9 +16,8 @@ import {
   loadScoreData,
   sumPoints,
 } from '@/services/league';
+import type { EditionScoreData } from '@/services/league';
 import type { BracketDoc, KORound } from '@/types';
-
-const BIG_POS = Number.MAX_SAFE_INTEGER;
 
 function cupId(editionId: string): string {
   return `${editionId}_cup`;
@@ -23,15 +30,21 @@ export async function getCup(editionId: string): Promise<BracketDoc | null> {
 }
 
 /**
- * Sorteia a Copa.
- *  - 'knockout': embaralha todos e monta o mata-mata direto.
- *  - 'groups': distribui em grupos por sorteio; o mata-mata é definido depois
- *    (via qualifyGroups), então `rounds` começa vazio.
+ * Sorteia a Copa no MODELO DE BLOCOS (opção B — automático). A Copa corre
+ * JUNTO com a Liga (mesmos jogos, ordenados por startTime); cada confronto
+ * consome um bloco consecutivo de `block` jogos.
+ *
+ *  - 'knockout': `seedOrder = shuffle(memberIds)`, `rounds = buildBracket(seedOrder)`
+ *    (mata-mata entre todos). Grava `block`.
+ *  - 'groups': `groups = distributeGroups(shuffle(memberIds), groupSize)`. O
+ *    mata-mata é sorteado depois (via `drawCupKnockout`), então grava
+ *    `koDrawn = false` e `rounds = []`.
  */
 export async function drawCup(
   editionId: string,
   memberIds: string[],
   config: { format: 'knockout' | 'groups'; groupSize?: number; qualifiersPerGroup?: number },
+  block: number,
   nicknames: Record<string, string>,
 ): Promise<void> {
   const base = {
@@ -39,20 +52,24 @@ export async function drawCup(
     editionId,
     type: 'cup' as const,
     format: config.format,
+    block,
   };
 
   let payload: Record<string, unknown>;
   if (config.format === 'groups') {
-    const groups = distributeGroups(memberIds, config.groupSize ?? memberIds.length);
+    const groupSize = config.groupSize ?? memberIds.length;
+    const groups = distributeGroups(shuffle(memberIds), groupSize);
     payload = {
       ...base,
       groups,
       qualifiersPerGroup: config.qualifiersPerGroup ?? 1,
+      koDrawn: false,
       rounds: [],
     };
   } else {
-    const rounds = decorateSlots(buildBracket(shuffle(memberIds)), nicknames);
-    payload = { ...base, rounds };
+    const seedOrder = shuffle(memberIds);
+    const rounds = decorateSlots(buildBracket(seedOrder), nicknames);
+    payload = { ...base, seedOrder, rounds };
   }
 
   await setDoc(doc(db, 'brackets', cupId(editionId)), {
@@ -62,13 +79,20 @@ export async function drawCup(
 }
 
 /**
- * Encerra a fase de grupos: ranqueia cada grupo pela soma de pontos nos
- * `groupMatchIds`, pega os `qualifiersPerGroup` melhores de cada grupo, sorteia
- * o mata-mata entre TODOS os classificados e grava as rodadas.
+ * Sorteia o mata-mata da Copa em formato 'groups', APÓS a fase de grupos
+ * terminar. Ranqueia cada grupo pela soma de pontos nos blocos da fase de
+ * grupos (`rankGroupByPoints`, desempate por posição na Liga), pega os
+ * `qualifiersPerGroup` melhores de cada grupo, sorteia o mata-mata entre TODOS
+ * os classificados (`koSeedOrder = shuffle(classificados)`), monta o bracket e
+ * grava `koDrawn = true`.
+ *
+ * Lança erro se a fase de grupos ainda não terminou.
  */
-export async function qualifyGroups(editionId: string, groupMatchIds: string[]): Promise<void> {
+export async function drawCupKnockout(editionId: string): Promise<void> {
   const cup = await getCup(editionId);
-  if (!cup || !cup.groups) return;
+  if (!cup || cup.format !== 'groups' || !cup.groups) {
+    throw new Error('Copa não está em formato de grupos.');
+  }
 
   const [data, positions, nicknames] = await Promise.all([
     loadScoreData(editionId),
@@ -76,94 +100,192 @@ export async function qualifyGroups(editionId: string, groupMatchIds: string[]):
     fetchNicknames(editionId),
   ]);
 
+  const block = cup.block ?? 0;
+  const groupSize = Math.max(...cup.groups.map((g) => g.memberIds.length));
+  const groupPhaseRounds = roundRobinRounds(groupSize);
+  const blocks = splitIntoBlocks(data.orderedMatchIds, block);
+  const phaseBlocks = blocks.slice(0, groupPhaseRounds);
+
+  // Só pode sortear quando TODOS os blocos da fase de grupos terminaram.
+  const complete =
+    groupPhaseRounds > 0 &&
+    phaseBlocks.length === groupPhaseRounds &&
+    phaseBlocks.every((b) => blockFinished(data, b));
+  if (!complete) {
+    throw new Error('A fase de grupos ainda não terminou.');
+  }
+
+  const phaseMatchIds = phaseBlocks.flat();
   const per = cup.qualifiersPerGroup ?? 1;
+
   const qualified: string[] = [];
   for (const g of cup.groups) {
-    const ranked = g.memberIds
-      .map((userId) => ({
-        userId,
-        points: sumPoints(data, userId, groupMatchIds),
-        pos: positions[userId] ?? BIG_POS,
-      }))
-      // mais pontos primeiro; desempate por melhor posição na Liga.
-      .sort((a, b) => b.points - a.points || a.pos - b.pos);
-    qualified.push(...ranked.slice(0, per).map((r) => r.userId));
+    const points: Record<string, number> = {};
+    for (const id of g.memberIds) points[id] = sumPoints(data, id, phaseMatchIds);
+    const ranked = rankGroupByPoints(g.memberIds, points, positions);
+    qualified.push(...ranked.slice(0, per));
   }
 
-  const rounds = decorateSlots(buildBracket(shuffle(qualified)), nicknames);
-  await setDoc(
-    doc(db, 'brackets', cupId(editionId)),
-    { rounds, updatedAt: serverTimestamp() },
-    { merge: true },
-  );
-}
+  const koSeedOrder = shuffle(qualified);
+  const rounds = decorateSlots(buildBracket(koSeedOrder), nicknames);
 
-/**
- * Resolve uma rodada do mata-mata da Copa: para cada confronto com os dois
- * slots definidos soma os pontos de cada participante em `matchIds`, decide o
- * vencedor (desempate por posição na Liga) e propaga os vencedores. Na FINAL,
- * empate de pontos vira co-campeões (dividem o prêmio).
- */
-export async function resolveCupRound(
-  editionId: string,
-  roundIndex: number,
-  matchIds: string[],
-): Promise<void> {
-  const cup = await getCup(editionId);
-  if (!cup || !cup.rounds[roundIndex]) return;
-
-  const [data, positions, nicknames] = await Promise.all([
-    loadScoreData(editionId),
-    leaguePositions(editionId),
-    fetchNicknames(editionId),
-  ]);
-
-  // Clona as rodadas para mutação local.
-  const rounds: KORound[] = cup.rounds.map((r) => ({
-    stage: r.stage,
-    matches: r.matches.map((m) => ({ ...m })),
-  }));
-  const round = rounds[roundIndex];
-  const isFinal = roundIndex === rounds.length - 1;
-
-  let championIds: string[] | undefined = cup.championIds;
-
-  for (const m of round.matches) {
-    const aId = m.slotA?.userId;
-    const bId = m.slotB?.userId;
-    if (!aId || !bId) continue; // bye ou slot ainda vazio
-
-    const pointsA = sumPoints(data, aId, matchIds);
-    const pointsB = sumPoints(data, bId, matchIds);
-    const { winnerId, pointsEqual } = resolveConfronto(
-      { userId: aId, points: pointsA, leaguePos: positions[aId] ?? BIG_POS },
-      { userId: bId, points: pointsB, leaguePos: positions[bId] ?? BIG_POS },
-    );
-
-    m.pointsA = pointsA;
-    m.pointsB = pointsB;
-    m.winnerId = winnerId;
-    m.pointsEqual = pointsEqual;
-    m.matchIds = matchIds;
-
-    if (isFinal) {
-      if (pointsEqual) {
-        m.coChampions = true;
-        championIds = [aId, bId];
-      } else {
-        championIds = [winnerId];
-      }
-    }
-  }
-
-  const propagated = decorateSlots(propagateBracket(rounds), nicknames);
   await setDoc(
     doc(db, 'brackets', cupId(editionId)),
     {
-      rounds: propagated,
-      ...(championIds ? { championIds } : {}),
+      koSeedOrder,
+      koDrawn: true,
+      rounds,
       updatedAt: serverTimestamp(),
     },
     { merge: true },
   );
+}
+
+interface CupGroupStanding {
+  userId: string;
+  nickname: string;
+  points: number;
+  position: number;
+  qualified: boolean;
+}
+
+export interface CupLive {
+  format: 'knockout' | 'groups';
+  block: number;
+  groups?: { name: string; standings: CupGroupStanding[] }[];
+  groupPhaseComplete: boolean;
+  koDrawn: boolean;
+  koRounds: KORound[];
+  championIds: string[];
+}
+
+/**
+ * Estado AO VIVO da Copa a partir do BracketDoc + jogos + palpites.
+ *
+ * Divide os jogos (ordenados por startTime) em blocos de `block`. Um bloco só
+ * "conta" quando TODOS os seus jogos estão 'finished'.
+ *
+ *  - 'knockout': `roundPoints[r]` = pontos de cada participante no bloco `r`
+ *    (null se o bloco não terminou); resolve com `resolveKnockout`.
+ *  - 'groups': a fase de grupos ocupa os blocos `0..roundRobinRounds(groupSize)-1`;
+ *    a classificação de cada grupo é a soma nesses blocos (`rankGroupByPoints`).
+ *    `groupPhaseComplete` quando todos esses blocos terminaram. Se `koDrawn`, o
+ *    mata-mata usa os blocos a partir de `roundRobinRounds(groupSize)`.
+ */
+export async function computeCupLive(editionId: string): Promise<CupLive> {
+  const cup = await getCup(editionId);
+  const block = cup?.block ?? 0;
+
+  if (!cup) {
+    return {
+      format: 'knockout',
+      block: 0,
+      groupPhaseComplete: false,
+      koDrawn: false,
+      koRounds: [],
+      championIds: [],
+    };
+  }
+
+  const [data, positions, nicknames] = await Promise.all([
+    loadScoreData(editionId),
+    leaguePositions(editionId),
+    fetchNicknames(editionId),
+  ]);
+
+  const blocks = splitIntoBlocks(data.orderedMatchIds, block);
+
+  // -------------------------------------------------------------- knockout
+  if (cup.format !== 'groups') {
+    const ids = cup.seedOrder ?? [];
+    const roundPoints = cup.rounds.map((_, r) => pointsForBlock(data, ids, blocks[r]));
+    const { rounds, championIds } = resolveKnockout(cup.rounds, roundPoints, positions);
+    return {
+      format: 'knockout',
+      block,
+      groupPhaseComplete: true,
+      koDrawn: true,
+      koRounds: decorateSlots(rounds, nicknames),
+      championIds,
+    };
+  }
+
+  // ---------------------------------------------------------------- groups
+  const groupsSrc = cup.groups ?? [];
+  const groupSize = groupsSrc.length ? Math.max(...groupsSrc.map((g) => g.memberIds.length)) : 0;
+  const groupPhaseRounds = roundRobinRounds(groupSize);
+  const phaseBlocks = blocks.slice(0, groupPhaseRounds);
+  const phaseMatchIds = phaseBlocks.flat();
+
+  const groupPhaseComplete =
+    groupPhaseRounds > 0 &&
+    phaseBlocks.length === groupPhaseRounds &&
+    phaseBlocks.every((b) => blockFinished(data, b));
+
+  const per = cup.qualifiersPerGroup ?? 1;
+  const groups = groupsSrc.map((g) => {
+    const points: Record<string, number> = {};
+    for (const id of g.memberIds) points[id] = sumPoints(data, id, phaseMatchIds);
+    const ranked = rankGroupByPoints(g.memberIds, points, positions);
+    const standings: CupGroupStanding[] = ranked.map((userId, idx) => ({
+      userId,
+      nickname: nicknames[userId] ?? userId,
+      points: points[userId] ?? 0,
+      position: idx + 1,
+      qualified: idx < per,
+    }));
+    return { name: g.name, standings };
+  });
+
+  const koDrawn = cup.koDrawn ?? false;
+  let koRounds: KORound[] = [];
+  let championIds: string[] = [];
+
+  if (koDrawn && cup.rounds.length > 0) {
+    // O mata-mata usa os blocos a partir do fim da fase de grupos.
+    const roundPoints = cup.rounds.map((_, r) =>
+      pointsForBlock(data, cup.koSeedOrder ?? [], blocks[groupPhaseRounds + r]),
+    );
+    const resolved = resolveKnockout(cup.rounds, roundPoints, positions);
+    koRounds = decorateSlots(resolved.rounds, nicknames);
+    championIds = resolved.championIds;
+  }
+
+  return {
+    format: 'groups',
+    block,
+    groups,
+    groupPhaseComplete,
+    koDrawn,
+    koRounds,
+    championIds,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers internos
+// ---------------------------------------------------------------------------
+
+/** Um bloco só conta quando existe, não está vazio e TODOS os jogos terminaram. */
+function blockFinished(data: EditionScoreData, block: string[] | undefined): boolean {
+  return (
+    !!block &&
+    block.length > 0 &&
+    block.every((mid) => data.matchesById[mid]?.status === 'finished')
+  );
+}
+
+/**
+ * Pontos de cada `id` no bloco. Retorna `null` (rodada "a definir") quando o
+ * bloco ainda não terminou — assim `resolveKnockout` para nessa rodada.
+ */
+function pointsForBlock(
+  data: EditionScoreData,
+  ids: string[],
+  block: string[] | undefined,
+): Record<string, number> | null {
+  if (!blockFinished(data, block)) return null;
+  const out: Record<string, number> = {};
+  for (const id of ids) out[id] = sumPoints(data, id, block as string[]);
+  return out;
 }

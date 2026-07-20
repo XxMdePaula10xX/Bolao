@@ -488,3 +488,117 @@ export function buildConsolationRounds(orderedBestToWorst: string[]): KORound[] 
   }
   return propagateBracket(rounds);
 }
+
+// ---------------------------------------------------------------------------
+// Resolução AO VIVO do mata-mata (Copa / Consolação)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve um mata-mata AO VIVO a partir do bracket inicial e dos pontos de cada
+ * rodada. Função PURA (não muta os argumentos).
+ *
+ * Para cada rodada `r` (0-based):
+ *  - se `roundPoints[r]` for `null` (bloco ainda não terminou), PARA: essa
+ *    rodada e as seguintes ficam "a definir" (sem winnerId).
+ *  - senão, para cada KOMatch com slotA e slotB definidos, soma os pontos de
+ *    cada lado (`roundPoints[r][userId] ?? 0`), decide com `resolveConfronto`
+ *    (empate de pontos → melhor posição na Liga) e grava
+ *    pointsA/pointsB/winnerId/pointsEqual. Depois propaga os vencedores para a
+ *    rodada seguinte antes de resolvê-la.
+ *
+ * Byes (slot único com winnerId já definido) são preservados e propagados.
+ *
+ * FINAL (última rodada): se resolver com `pointsEqual` → co-campeões
+ * (coChampions=true, championIds com os DOIS). Senão, championIds = [vencedor].
+ * O empate na final NÃO é desempatado pela Liga — vira co-campeonato.
+ */
+export function resolveKnockout(
+  initialRounds: KORound[],
+  roundPoints: (Record<string, number> | null)[],
+  leaguePos: Record<string, number>,
+): { rounds: KORound[]; championIds: string[] } {
+  // Clona fundo o suficiente para não mutar a entrada.
+  let rounds: KORound[] = initialRounds.map((r) => ({
+    stage: r.stage,
+    matches: r.matches.map((m) => ({ ...m })),
+  }));
+
+  const lastIndex = rounds.length - 1;
+  let championIds: string[] = [];
+
+  for (let r = 0; r < rounds.length; r++) {
+    const pts = roundPoints[r];
+    if (pts == null) {
+      // Bloco não terminou → para aqui; rodadas seguintes ficam a definir.
+      break;
+    }
+
+    const isFinal = r === lastIndex;
+    const cur = rounds[r];
+
+    for (const match of cur.matches) {
+      // Bye ou já resolvido por avanço direto: mantém como está.
+      if (!match.slotA || !match.slotB) continue;
+
+      const aId = match.slotA.userId;
+      const bId = match.slotB.userId;
+      const pointsA = pts[aId] ?? 0;
+      const pointsB = pts[bId] ?? 0;
+
+      const decision = resolveConfronto(
+        { userId: aId, points: pointsA, leaguePos: leaguePos[aId] ?? Number.POSITIVE_INFINITY },
+        { userId: bId, points: pointsB, leaguePos: leaguePos[bId] ?? Number.POSITIVE_INFINITY },
+      );
+
+      match.pointsA = pointsA;
+      match.pointsB = pointsB;
+      match.pointsEqual = decision.pointsEqual;
+
+      if (isFinal && decision.pointsEqual) {
+        // Empate na final = co-campeões (a Liga NÃO decide a final).
+        match.coChampions = true;
+        match.winnerId = null;
+        championIds = [aId, bId];
+      } else {
+        match.winnerId = decision.winnerId;
+        if (isFinal) championIds = [decision.winnerId];
+      }
+    }
+
+    // Final resolvida por bye (um lado só, winnerId já definido).
+    if (isFinal && championIds.length === 0) {
+      const finalMatch = cur.matches[0];
+      if (finalMatch && finalMatch.winnerId) championIds = [finalMatch.winnerId];
+    }
+
+    // Propaga os vencedores para a rodada seguinte antes de resolvê-la.
+    if (r < lastIndex) rounds = propagateBracket(rounds);
+  }
+
+  return { rounds, championIds };
+}
+
+/**
+ * Ordena os membros de um grupo pela classificação: mais pontos primeiro;
+ * empate de pontos desempata pela MELHOR posição na Liga (menor leaguePos).
+ * Fallback estável: mantém a ordem de entrada quando pontos e posição empatam.
+ * Não muta a entrada.
+ */
+export function rankGroupByPoints(
+  memberIds: string[],
+  points: Record<string, number>,
+  leaguePos: Record<string, number>,
+): string[] {
+  return memberIds
+    .map((id, i) => ({ id, i }))
+    .sort((a, b) => {
+      const pa = points[a.id] ?? 0;
+      const pb = points[b.id] ?? 0;
+      if (pb !== pa) return pb - pa; // mais pontos primeiro
+      const la = leaguePos[a.id] ?? Number.POSITIVE_INFINITY;
+      const lb = leaguePos[b.id] ?? Number.POSITIVE_INFINITY;
+      if (la !== lb) return la - lb; // menor posição na Liga primeiro
+      return a.i - b.i; // estável
+    })
+    .map((x) => x.id);
+}

@@ -1,39 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
   getConsolation,
   drawConsolation,
-  resolveConsolationRound,
+  computeConsolationLive,
 } from '@/services/consolation';
-import { computeLeagueTable } from '@/services/league';
+import { getLeague } from '@/services/league';
 import { listEditionMembers } from '@/services/editions';
 import { listMatches } from '@/services/matches';
+import { knockoutRounds, consolationBlockInfo } from '@/lib/competition';
 import { toast } from '@/lib/toast';
-import type { BracketDoc, KOMatch, KORound, Match, FireDate } from '@/types';
+import type { BracketDoc, KOMatch, KORound } from '@/types';
 
 const LAST_N_OPTIONS = [4, 6, 8];
+
+type Live = Awaited<ReturnType<typeof computeConsolationLive>>;
 
 function initials(name: string): string {
   const parts = (name || '?').trim().split(/\s+/);
   const raw = parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0];
   return raw.toUpperCase();
-}
-
-function toMillis(value: FireDate): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  return value.toMillis();
-}
-
-function formatDate(value: FireDate): string {
-  const ms = toMillis(value);
-  if (!ms) return 'A definir';
-  return new Date(ms).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 interface Props {
@@ -44,18 +30,17 @@ interface Props {
 
 export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) {
   const [bracket, setBracket] = useState<BracketDoc | null>(null);
+  const [live, setLive] = useState<Live | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
-  const [tableSize, setTableSize] = useState(0);
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [leagueReady, setLeagueReady] = useState(false);
+  const [ligaGamesUsed, setLigaGamesUsed] = useState(0);
+  const [totalGames, setTotalGames] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   const [lastN, setLastN] = useState<number>(4);
+  const [block, setBlock] = useState<number>(2);
   const [drawing, setDrawing] = useState(false);
-
-  const [openRound, setOpenRound] = useState<number | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [resolving, setResolving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,14 +50,22 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
         getConsolation(editionId),
         listEditionMembers(editionId),
         listMatches(editionId),
-        computeLeagueTable(editionId),
+        getLeague(editionId),
       ]);
       const nameMap: Record<string, string> = {};
       for (const m of members) nameMap[m.userId] = m.nickname;
       setNames(nameMap);
       setBracket(bra);
-      setMatches(ms);
-      setTableSize(league.table.length);
+      setTotalGames(ms.length);
+      setLeagueReady(!!league);
+      setLigaGamesUsed(league ? league.rounds.length * league.matchesPerRound : 0);
+
+      if (bra) {
+        const result = await computeConsolationLive(editionId);
+        setLive(result);
+      } else {
+        setLive(null);
+      }
     } catch {
       setError(true);
     } finally {
@@ -83,6 +76,7 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
   useEffect(() => {
     let alive = true;
     setBracket(null);
+    setLive(null);
     (async () => {
       if (!alive) return;
       await load();
@@ -92,67 +86,45 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
     };
   }, [load]);
 
+  // Nº de confrontos e bloco máximo para o lastN escolhido (setup).
+  const setupInfo = useMemo(() => {
+    const rounds = knockoutRounds(lastN);
+    const info = consolationBlockInfo(rounds, totalGames, ligaGamesUsed);
+    return { rounds, ...info };
+  }, [lastN, totalGames, ligaGamesUsed]);
+
+  // Ao trocar lastN (ou quando os dados carregam), reajusta o bloco para um
+  // padrão pequeno, respeitando o máximo viável.
+  useEffect(() => {
+    const max = setupInfo.maxBlock;
+    setBlock(Math.max(1, Math.min(2, max || 1)));
+  }, [lastN, setupInfo.maxBlock]);
+
   function nameOf(userId: string): string {
     return names[userId] ?? 'Participante';
   }
 
   async function handleDraw() {
+    if (setupInfo.maxBlock <= 0) {
+      toast('Ainda não há jogos suficientes para montar a Consolação.', 'err');
+      return;
+    }
     const ok = window.confirm(
-      `Montar a Consolação com os ${lastN} últimos colocados da Liga? ` +
+      `Montar a Consolação com os ${lastN} últimos da Liga, ` +
+        `${block} jogo${block === 1 ? '' : 's'} por confronto? ` +
         'O chaveamento é sorteado a partir da tabela atual.',
     );
     if (!ok) return;
 
     setDrawing(true);
     try {
-      await drawConsolation(editionId, lastN, names);
+      await drawConsolation(editionId, lastN, block, names);
       toast('Consolação montada! Segunda chance chegando.', 'ok');
       await load();
     } catch {
       toast('Não foi possível montar a Consolação.', 'err');
     } finally {
       setDrawing(false);
-    }
-  }
-
-  function toggleMatch(id: string) {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function openResolver(roundIndex: number) {
-    if (openRound === roundIndex) {
-      setOpenRound(null);
-      return;
-    }
-    // Pré-seleciona os jogos já usados na rodada, se houver.
-    const round = bracket?.rounds[roundIndex];
-    const used = round?.matches.find((m) => m.matchIds?.length)?.matchIds ?? [];
-    setPicked(new Set(used));
-    setOpenRound(roundIndex);
-  }
-
-  async function handleResolve(roundIndex: number) {
-    const matchIds = [...picked];
-    if (matchIds.length === 0) {
-      toast('Escolha ao menos um jogo para decidir a rodada.', 'err');
-      return;
-    }
-    setResolving(true);
-    try {
-      await resolveConsolationRound(editionId, roundIndex, matchIds);
-      toast('Rodada da Consolação resolvida!', 'ok');
-      setOpenRound(null);
-      setPicked(new Set());
-      await load();
-    } catch {
-      toast('Não foi possível resolver a rodada.', 'err');
-    } finally {
-      setResolving(false);
     }
   }
 
@@ -182,7 +154,8 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
   // --- Ainda sem Consolação montada ---
   if (!bracket) {
     if (isOrganizer) {
-      const leaguePronta = tableSize >= 2;
+      const { rounds, maxBlock, overlaps } = setupInfo;
+      const podeMontar = leagueReady && maxBlock > 0;
       return (
         <div className="card">
           <div className="row gap" style={{ justifyContent: 'space-between' }}>
@@ -192,10 +165,16 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
           <p className="muted" style={intro}>
             A Consolação é a repescagem do bolão: os últimos colocados da Liga
             ganham um mata-mata só deles, com nova chance de brilhar. Ela começa
-            depois que a Liga estiver rolando.
+            depois que a Liga termina — cada confronto é decidido por um bloco de
+            jogos, automaticamente.
           </p>
 
-          {leaguePronta ? (
+          {!leagueReady ? (
+            <p className="muted" style={{ ...intro, marginTop: 12 }}>
+              Sorteie a Liga primeiro. Assim que ela estiver montada, você poderá
+              montar a Consolação aqui.
+            </p>
+          ) : (
             <>
               <div className="field" style={{ marginTop: 16, marginBottom: 0 }}>
                 <label>Quantos últimos da Liga entram?</label>
@@ -207,20 +186,59 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
                   ))}
                 </select>
               </div>
+
+              <div className="field" style={{ marginTop: 14, marginBottom: 0 }}>
+                <label>Jogos por confronto</label>
+                <select
+                  value={block}
+                  onChange={(e) => setBlock(Number(e.target.value))}
+                  disabled={maxBlock <= 0}
+                >
+                  {Array.from({ length: Math.max(1, maxBlock) }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n} jogo{n === 1 ? '' : 's'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div
+                className="card"
+                style={{ background: 'var(--bg-elev)', padding: 12, marginTop: 14 }}
+              >
+                {maxBlock > 0 ? (
+                  <p className="muted" style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+                    Serão <b style={{ color: 'var(--txt)' }}>{rounds}</b> confronto
+                    {rounds === 1 ? '' : 's'} até o título, com até{' '}
+                    <b style={{ color: 'var(--blue)' }}>{maxBlock}</b> jogo
+                    {maxBlock === 1 ? '' : 's'} por confronto.{' '}
+                    {overlaps ? (
+                      <>
+                        Como a Liga usa quase todos os jogos, a Consolação vai{' '}
+                        <b style={{ color: 'var(--gold)' }}>rodar junto com o fim da Liga</b>.
+                      </>
+                    ) : (
+                      <>Ela começa assim que a Liga terminar.</>
+                    )}
+                  </p>
+                ) : (
+                  <p className="muted" style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+                    Ainda não há jogos suficientes para {rounds} confronto
+                    {rounds === 1 ? '' : 's'}. Cadastre mais jogos ou reduza quantos
+                    últimos entram.
+                  </p>
+                )}
+              </div>
+
               <button
                 className="btn btn-gold"
                 onClick={handleDraw}
-                disabled={drawing}
+                disabled={drawing || !podeMontar}
                 style={{ marginTop: 14 }}
               >
                 {drawing ? 'Montando…' : 'Montar Consolação'}
               </button>
             </>
-          ) : (
-            <p className="muted" style={{ ...intro, marginTop: 12 }}>
-              Assim que a tabela da Liga tiver classificação, você poderá montar a
-              Consolação aqui.
-            </p>
           )}
         </div>
       );
@@ -240,8 +258,10 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
     );
   }
 
-  const rounds = bracket.rounds ?? [];
-  const champions = bracket.championIds ?? [];
+  // --- Consolação montada: chaveamento ao vivo (automático) ---
+  const rounds: KORound[] = live?.koRounds ?? bracket.rounds ?? [];
+  const champions = live?.championIds ?? bracket.championIds ?? [];
+  const overlapsLiga = live?.overlapsLiga ?? bracket.overlapsLiga ?? false;
 
   return (
     <div className="stack gap">
@@ -253,8 +273,14 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
         </div>
         <p className="muted" style={intro}>
           Mata-mata dos últimos colocados da Liga — uma nova chance de fechar a
-          campanha em alta.
+          campanha em alta. Cada confronto é decidido pelos pontos de um bloco de
+          jogos; os vencedores avançam sozinhos, conforme os jogos terminam.
         </p>
+        {overlapsLiga && (
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
+            Roda junto com a reta final da Liga.
+          </p>
+        )}
       </div>
 
       {/* Campeão(ões) */}
@@ -281,7 +307,7 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
         </div>
       )}
 
-      {/* Chaveamento */}
+      {/* Chaveamento ao vivo */}
       <div className="stack gap-sm">
         <h2 className="sec">Chaveamento</h2>
         {rounds.length === 0 && (
@@ -290,114 +316,29 @@ export function ConsolacaoTab({ editionId, currentUserId, isOrganizer }: Props) 
           </div>
         )}
 
-        {rounds.map((round, roundIndex) => {
-          const resolvable = round.matches.some((m) => m.slotA && m.slotB);
-          const isOpen = openRound === roundIndex;
-          return (
-            <div key={roundIndex} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={roundHeadStyle}>
-                <span className="disp" style={{ fontSize: 15, fontWeight: 700 }}>
-                  {round.stage}
-                </span>
-                {roundIndex === rounds.length - 1 && (
-                  <span className="badge badge-gold">decisão</span>
-                )}
-              </div>
-
-              <div className="stack">
-                {round.matches.map((m) => (
-                  <MatchRow
-                    key={m.id}
-                    m={m}
-                    nameOf={nameOf}
-                    currentUserId={currentUserId}
-                  />
-                ))}
-              </div>
-
-              {isOrganizer && resolvable && (
-                <div style={{ borderTop: '1px solid var(--line)' }}>
-                  <button
-                    onClick={() => openResolver(roundIndex)}
-                    className="btn btn-ghost"
-                    style={{ width: 'auto', margin: 12 }}
-                  >
-                    {isOpen ? 'Cancelar' : 'Resolver rodada'}
-                  </button>
-
-                  {isOpen && (
-                    <div style={{ padding: '0 12px 12px' }}>
-                      <p className="muted" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 10 }}>
-                        Escolha os jogos que decidem esta fase. Os pontos de cada
-                        participante nesses jogos definem quem avança.
-                      </p>
-                      <div className="stack gap-sm">
-                        {matches.length === 0 && (
-                          <span className="muted" style={{ fontSize: 13 }}>
-                            Nenhum jogo cadastrado ainda.
-                          </span>
-                        )}
-                        {matches.map((match) => {
-                          const checked = picked.has(match.id);
-                          const finished = match.status === 'finished';
-                          return (
-                            <label
-                              key={match.id}
-                              className="row gap-sm"
-                              style={matchPickStyle(checked)}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleMatch(match.id)}
-                                style={{ width: 18, height: 18, accentColor: 'var(--gold)' }}
-                              />
-                              <div className="stack" style={{ flex: 1, minWidth: 0 }}>
-                                <span
-                                  style={{
-                                    fontSize: 14,
-                                    fontWeight: 600,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {match.homeTeam.flag ?? '🏳️'} {match.homeTeam.name}
-                                  {finished && match.homeScore != null
-                                    ? ` ${match.homeScore}×${match.awayScore} `
-                                    : ' × '}
-                                  {match.awayTeam.name} {match.awayTeam.flag ?? '🏳️'}
-                                </span>
-                                <span className="muted" style={{ fontSize: 11.5 }}>
-                                  {formatDate(match.startTime)}
-                                </span>
-                              </div>
-                              <span
-                                className={`badge ${finished ? 'badge-green' : 'badge-gray'}`}
-                              >
-                                {finished ? 'encerrado' : 'aguardando'}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                      <button
-                        className="btn btn-gold"
-                        onClick={() => handleResolve(roundIndex)}
-                        disabled={resolving}
-                        style={{ marginTop: 12 }}
-                      >
-                        {resolving
-                          ? 'Resolvendo…'
-                          : `Resolver ${round.stage} (${picked.size} jogo${picked.size === 1 ? '' : 's'})`}
-                      </button>
-                    </div>
-                  )}
-                </div>
+        {rounds.map((round, roundIndex) => (
+          <div key={roundIndex} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={roundHeadStyle}>
+              <span className="disp" style={{ fontSize: 15, fontWeight: 700 }}>
+                {round.stage}
+              </span>
+              {roundIndex === rounds.length - 1 && (
+                <span className="badge badge-gold">decisão</span>
               )}
             </div>
-          );
-        })}
+
+            <div className="stack">
+              {round.matches.map((m) => (
+                <MatchRow
+                  key={m.id}
+                  m={m}
+                  nameOf={nameOf}
+                  currentUserId={currentUserId}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -445,18 +386,20 @@ function MatchRow({
   }
 
   const resolved = m.winnerId != null && m.pointsA != null && m.pointsB != null;
-  const aWon = resolved && m.winnerId === aId;
-  const bWon = resolved && m.winnerId === bId;
+  const co = !!m.coChampions;
+  const aWon = (resolved && m.winnerId === aId) || co;
+  const bWon = (resolved && m.winnerId === bId) || co;
   const meA = aId === currentUserId;
   const meB = bId === currentUserId;
   const aName = m.slotA?.nickname ?? nameOf(aId);
   const bName = m.slotB?.nickname ?? nameOf(bId);
+  const scored = m.pointsA != null && m.pointsB != null;
 
   return (
     <div className="row gap" style={rowStyle(meA || meB)}>
       <Side name={aName} isMe={meA} align="left" winner={aWon} />
       <div className="center" style={{ flex: '0 0 auto', minWidth: 64 }}>
-        {resolved ? (
+        {scored ? (
           <span className="disp tnum" style={{ fontSize: 16, fontWeight: 700 }}>
             <b style={{ color: aWon ? 'var(--gold)' : 'var(--txt)' }}>{m.pointsA}</b>
             <span className="muted"> × </span>
@@ -465,10 +408,20 @@ function MatchRow({
         ) : (
           <span className="muted disp" style={{ fontSize: 12 }}>a definir</span>
         )}
-        {m.pointsEqual && (
-          <div className="badge badge-blue" style={{ marginTop: 4 }} title="Desempate pela posição na Liga">
-            desempate
+        {co ? (
+          <div className="badge badge-gold" style={{ marginTop: 4 }} title="Empate na final: co-campeões">
+            co-campeões
           </div>
+        ) : (
+          m.pointsEqual && (
+            <div
+              className="badge badge-blue"
+              style={{ marginTop: 4 }}
+              title="Desempate pela posição na Liga"
+            >
+              desempate
+            </div>
+          )
         )}
       </div>
       <Side name={bName} isMe={meB} align="right" winner={bWon} />
@@ -541,16 +494,5 @@ function rowStyle(isMe: boolean): CSSProperties {
     padding: '12px 16px',
     borderBottom: '1px solid var(--line-soft)',
     background: isMe ? 'rgba(244,196,48,.07)' : 'transparent',
-  };
-}
-
-function matchPickStyle(checked: boolean): CSSProperties {
-  return {
-    cursor: 'pointer',
-    gap: 10,
-    padding: '10px 12px',
-    borderRadius: 'var(--radius-sm)',
-    border: `1px solid ${checked ? 'var(--gold)' : 'var(--line)'}`,
-    background: checked ? 'rgba(244,196,48,.07)' : 'var(--bg-elev)',
   };
 }
