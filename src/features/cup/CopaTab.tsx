@@ -251,6 +251,9 @@ function CupSetup({
       toast('Jogos insuficientes para montar a Copa.', 'err');
       return;
     }
+    if (!window.confirm('Sortear a Copa fixa o chaveamento e não deve ser refeito. Continuar?')) {
+      return;
+    }
 
     setBusy(true);
     try {

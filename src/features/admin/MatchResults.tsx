@@ -121,6 +121,12 @@ export function MatchResults({ editionId }: MatchResultsProps) {
   async function handleSave(m: Match, finished: boolean) {
     const r = buildResult(m);
     if (!r) return;
+    // Reencerrar um jogo já finalizado recalcula a pontuação de todos — confirma.
+    if (finished && m.status === 'finished') {
+      if (!window.confirm('Este jogo já está encerrado. Reencerrar vai recalcular a pontuação de todos. Continuar?')) {
+        return;
+      }
+    }
     setBusyId(m.id);
     try {
       await setMatchResult(m.id, r, finished);

@@ -41,10 +41,23 @@ function isScorable(m: Match): boolean {
   return m.status === 'finished' && m.homeScore !== null && m.awayScore !== null;
 }
 
+function startMs(m: Match): number {
+  const t = m.startTime as unknown;
+  if (typeof t === 'number') return t;
+  if (t && typeof t === 'object') {
+    const o = t as { toMillis?: () => number; seconds?: number };
+    if (o.toMillis) return o.toMillis();
+    if (o.seconds != null) return o.seconds * 1000;
+  }
+  return 0;
+}
+
 export function computeStats(input: ComputeStatsInput): ComputeStatsResult {
   const { members, matches, predsByUser, matchesPerRound, leagueTable } = input;
 
-  const scorable = matches.filter(isScorable);
+  // Ordena por início — os blocos das rodadas são fatiados nessa ordem.
+  const ordered = [...matches].sort((a, b) => startMs(a) - startMs(b));
+  const scorable = ordered.filter(isScorable);
   const blockSize = matchesPerRound > 0 ? matchesPerRound : scorable.length || 1;
 
   const leagueByUser = new Map<string, LeagueTableRow>();
@@ -65,15 +78,11 @@ export function computeStats(input: ComputeStatsInput): ComputeStatsResult {
     let predictedCount = 0;
     let scoredCount = 0;
 
-    // Pontos por jogo finalizado, na ordem dada (para os blocos).
-    const pointsInOrder: number[] = [];
-
+    // Pontos por jogo finalizado, indexados por matchId.
+    const ptByMatch: Record<string, number> = {};
     for (const match of scorable) {
       const pred = preds[match.id];
-      if (!pred) {
-        pointsInOrder.push(0);
-        continue;
-      }
+      if (!pred) continue;
       predictedCount++;
       const sb = scorePrediction(
         {
@@ -89,7 +98,7 @@ export function computeStats(input: ComputeStatsInput): ComputeStatsResult {
           penaltyWinnerTeamId: match.penaltyWinnerTeamId,
         },
       );
-      pointsInOrder.push(sb.points);
+      ptByMatch[match.id] = sb.points;
       if (sb.exactHit) exact++;
       if (sb.points > 0) {
         scoredCount++;
@@ -98,10 +107,13 @@ export function computeStats(input: ComputeStatsInput): ComputeStatsResult {
     }
 
     // Melhor bloco: maior soma num bloco de `blockSize` jogos consecutivos.
+    // ALINHADO às rodadas reais: fatiado sobre TODOS os jogos ordenados
+    // (0 para jogo não finalizado/sem palpite), não só os finalizados.
+    const pointsFullOrder = ordered.map((m) => ptByMatch[m.id] ?? 0);
     let best = 0;
-    for (let i = 0; i < pointsInOrder.length; i += blockSize) {
+    for (let i = 0; i < pointsFullOrder.length; i += blockSize) {
       let sum = 0;
-      for (let j = i; j < i + blockSize && j < pointsInOrder.length; j++) sum += pointsInOrder[j];
+      for (let j = i; j < i + blockSize && j < pointsFullOrder.length; j++) sum += pointsFullOrder[j];
       if (sum > best) best = sum;
     }
 

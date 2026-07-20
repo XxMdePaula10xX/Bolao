@@ -57,11 +57,19 @@ export async function drawConsolation(
   const totalGames = data.orderedMatchIds.length;
   const ligaGamesUsed = league ? league.rounds.length * league.matchesPerRound : 0;
 
+  if (seedOrder.length < 2) {
+    throw new Error('Participantes insuficientes para a Consolação (a Liga precisa estar sorteada e ter últimos colocados).');
+  }
   const consolationRounds = rounds.length;
   const info = consolationBlockInfo(consolationRounds, totalGames, ligaGamesUsed);
+  if (info.maxBlock < 1) {
+    throw new Error('Jogos insuficientes para montar a Consolação. Cadastre mais jogos ou reduza os participantes.');
+  }
+  // Trava o bloco em [1, máximo viável] — nunca 0 (janela vazia nunca resolve).
+  const safeBlock = Math.max(1, Math.min(Math.floor(block) || 1, info.maxBlock));
   const overlapsLiga = info.overlaps;
   const startGameIndex = overlapsLiga
-    ? Math.max(0, totalGames - consolationRounds * block)
+    ? Math.max(0, totalGames - consolationRounds * safeBlock)
     : ligaGamesUsed;
 
   const bracket: BracketDoc = {
@@ -70,7 +78,7 @@ export async function drawConsolation(
     type: 'consolation',
     rounds,
     seedOrder,
-    block,
+    block: safeBlock,
     startGameIndex,
     overlapsLiga,
     createdAt: null,

@@ -207,8 +207,6 @@ export interface Prediction {
   pointsAwarded?: number | null;
 }
 
-export type LongTermMarket = 'champion' | 'topScorer' | 'assistLeader' | 'bestPlayer';
-
 export interface LongTermPrediction {
   id: string; // `${editionId}_${userId}`
   editionId: string;

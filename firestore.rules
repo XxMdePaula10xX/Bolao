@@ -28,6 +28,22 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/editions/$(editionId)).data.ownerId == uid();
     }
 
+    // Dados do jogo (para travar palpites nas regras, não só no cliente).
+    function matchData(matchId) {
+      return get(/databases/$(database)/documents/matches/$(matchId)).data;
+    }
+    // Palpites só podem ser criados/editados ENQUANTO o jogo não começou.
+    function matchOpen(matchId) {
+      return exists(/databases/$(database)/documents/matches/$(matchId))
+        && matchData(matchId).status == 'scheduled'
+        && matchData(matchId).startTime > request.time;
+    }
+    // Janela de Longo Prazo aberta (antes de "Iniciar a Copa").
+    function longTermOpen(editionId) {
+      return exists(/databases/$(database)/documents/editions/$(editionId))
+        && get(/databases/$(database)/documents/editions/$(editionId)).data.status in ['draft', 'longterm_open'];
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn() && userId == uid();
@@ -35,12 +51,15 @@ service cloud.firestore {
     }
 
     match /editions/{editionId} {
+      // Leitura por qualquer logado é necessária para entrar por código de convite.
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.ownerId == uid();
       allow update: if isEditionOrganizer(editionId)
         || isAdmin()
+        // Ao entrar, o participante só pode INCREMENTAR memberCount em 1.
         || (isSignedIn()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount'])
+            && request.resource.data.memberCount == resource.data.memberCount + 1);
       allow delete: if isEditionOrganizer(editionId);
     }
 
@@ -55,6 +74,7 @@ service cloud.firestore {
             || isAdmin());
     }
 
+    // Liga e chaveamentos são gravados pelo organizador (cálculos sensíveis).
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isSignedIn()
@@ -79,28 +99,51 @@ service cloud.firestore {
 
     match /predictions/{predictionId} {
       allow read: if isMember(resource.data.editionId);
-      allow create, update: if isSignedIn()
+
+      // Criar: dono, membro, jogo ainda aberto, e SEM setar campos de pontuação
+      // (esses só a Cloud Function grava, via Admin SDK, que ignora as regras).
+      allow create: if isSignedIn()
         && request.resource.data.userId == uid()
-        && isMember(request.resource.data.editionId);
+        && isMember(request.resource.data.editionId)
+        && matchOpen(request.resource.data.matchId)
+        && !('pointsAwarded' in request.resource.data)
+        && !('wasExact' in request.resource.data)
+        && !('wasWinner' in request.resource.data);
+
+      // Editar: só o DONO atual, sem trocar identidade do palpite, com o jogo
+      // ainda aberto (imutável após o apito), e sem mexer na pontuação.
+      allow update: if isSignedIn()
+        && resource.data.userId == uid()
+        && request.resource.data.userId == uid()
+        && request.resource.data.editionId == resource.data.editionId
+        && request.resource.data.matchId == resource.data.matchId
+        && matchOpen(resource.data.matchId)
+        && !('pointsAwarded' in request.resource.data)
+        && !('wasExact' in request.resource.data)
+        && !('wasWinner' in request.resource.data);
+
       allow delete: if false;
     }
 
     match /longTermPredictions/{ltId} {
       allow read: if isMember(resource.data.editionId);
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == uid();
+      // Membro, e só enquanto a janela de longo prazo estiver aberta.
+      allow create: if isSignedIn()
+        && request.resource.data.userId == uid()
+        && isMember(request.resource.data.editionId)
+        && longTermOpen(request.resource.data.editionId);
+      allow update: if isSignedIn()
+        && resource.data.userId == uid()
+        && request.resource.data.userId == uid()
+        && request.resource.data.editionId == resource.data.editionId
+        && longTermOpen(resource.data.editionId);
       allow delete: if false;
     }
 
-    match /payouts/{id} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn()
-        && (isEditionOrganizer(
-              request.resource != null
-                ? request.resource.data.editionId
-                : resource.data.editionId
-            )
-            || isAdmin());
+    match /payouts/{editionId} {
+      // Contribuições em dinheiro e gabarito: só membros/organizador.
+      allow read: if isMember(editionId) || isEditionOrganizer(editionId) || isAdmin();
+      allow create, update, delete: if isEditionOrganizer(editionId) || isAdmin();
     }
 
     match /feedPosts/{id} {
@@ -116,14 +159,17 @@ service cloud.firestore {
 
     match /editionMembers/{memberId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.userId == uid();
+      // Cada um cria SÓ o próprio vínculo, com agregados ZERADOS (nada de
+      // forjar pontos). O id precisa ser `${editionId}_${uid}`.
+      allow create: if isSignedIn()
+        && request.resource.data.userId == uid()
+        && memberId == request.resource.data.editionId + '_' + uid()
+        && request.resource.data.totalPoints == 0
+        && request.resource.data.exactHits == 0
+        && request.resource.data.winnerHits == 0;
+      // Agregados (pontos) só mudam via Cloud Function (Admin SDK).
       allow update: if isAdmin();
       allow delete: if false;
-    }
-
-    match /notifications/{notificationId} {
-      allow read, update: if isSignedIn() && resource.data.userId == uid();
-      allow create, delete: if false;
     }
   }
 }

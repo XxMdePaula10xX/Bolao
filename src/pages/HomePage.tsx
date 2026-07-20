@@ -28,6 +28,7 @@ export function HomePage() {
   const first = profile?.nickname?.split(' ')[0] ?? 'Palpiteiro';
   const [standing, setStanding] = useState<Standing | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -54,7 +55,10 @@ export function HomePage() {
           setStanding(null);
         }
       } catch {
-        if (alive) setStanding(null);
+        if (alive) {
+          setStanding(null);
+          setFailed(true);
+        }
       } finally {
         if (alive) setLoaded(true);
       }
@@ -72,7 +76,19 @@ export function HomePage() {
 
       {loaded && standing && <PositionCard s={standing} />}
 
-      {loaded && !standing && (
+      {loaded && failed && (
+        <div className="card" style={{ marginTop: 18 }}>
+          <h2 className="sec">Não foi possível carregar</h2>
+          <p className="muted" style={{ marginTop: 8, fontSize: 14, lineHeight: 1.7 }}>
+            Houve uma falha ao buscar seus dados. Verifique sua conexão.
+          </p>
+          <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => window.location.reload()}>
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {loaded && !failed && !standing && (
         <Link to="/bolao" className="card" style={{ display: 'block', marginTop: 18 }}>
           <h2 className="sec">Comece por aqui</h2>
           <p className="muted" style={{ marginTop: 8, fontSize: 14, lineHeight: 1.7 }}>

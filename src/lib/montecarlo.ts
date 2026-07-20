@@ -44,6 +44,7 @@ export function simulateTitleChances(
   for (let it = 0; it < iterations; it++) {
     let bestIdx = 0;
     let bestTotal = -Infinity;
+    let tied = 0; // nº de empatados no topo (para desempate uniforme)
     for (let i = 0; i < players.length; i++) {
       const hist = samples[i];
       let total = players[i].currentPoints;
@@ -53,6 +54,12 @@ export function simulateTitleChances(
       if (total > bestTotal) {
         bestTotal = total;
         bestIdx = i;
+        tied = 1;
+      } else if (total === bestTotal) {
+        // Empate no topo: escolhe o vencedor uniformemente (reservoir sampling),
+        // em vez de favorecer sempre o 1º da lista (o líder atual).
+        tied++;
+        if (rand() < 1 / tied) bestIdx = i;
       }
     }
     wins[players[bestIdx].userId]++;

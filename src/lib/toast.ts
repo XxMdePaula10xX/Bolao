@@ -6,6 +6,9 @@ export function toast(message: string, type: 'ok' | 'err' | '' = '') {
   if (!el) {
     el = document.createElement('div');
     el.className = 'toast';
+    // Anunciado por leitores de tela (feedback de "salvo", erros, etc.).
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     document.body.appendChild(el);
   }
   el.textContent = message;
