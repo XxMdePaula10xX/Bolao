@@ -261,6 +261,9 @@ function Overview({
   useEffect(() => {
     if (!organizer) return;
     let alive = true;
+    // Zera os sinais ao trocar de edição para não mostrar os ✓ da edição anterior
+    // enquanto os desta carregam.
+    setSignals(null);
     (async () => {
       try {
         const [matches, league, cup, consolation, payouts] = await Promise.all([

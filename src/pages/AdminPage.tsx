@@ -77,8 +77,8 @@ export function AdminPage() {
     );
   }
 
-  // Área restrita: só o organizador da edição.
-  if (!isOrganizer(edition, profile.id)) {
+  // Área restrita: organizador da edição ou admin do sistema.
+  if (!isOrganizer(edition, profile.id) && !profile.isSystemAdmin) {
     return (
       <div className="wrap" style={{ paddingTop: 24 }}>
         <h1 className="page">Área restrita</h1>
