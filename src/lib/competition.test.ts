@@ -18,6 +18,10 @@ import {
   stageName,
   roundRobinRounds,
   maxBlockSize,
+  knockoutRounds,
+  cupRoundCount,
+  maxCupBlock,
+  consolationBlockInfo,
 } from './competition.ts';
 
 // Gerador determinístico (LCG) para testar sorteios sem depender de Math.random.
@@ -350,4 +354,56 @@ test('rodadas × bloco máximo nunca excede o total de jogos', () => {
     // e o próximo bloco (b+1) já estouraria
     if (b >= 1) assert.ok(roundRobinRounds(n) * (b + 1) > g);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Copa e Consolação — nº de confrontos e bloco máximo (casos reais do usuário)
+// ---------------------------------------------------------------------------
+test('knockoutRounds: rodadas do mata-mata', () => {
+  assert.equal(knockoutRounds(16), 4);
+  assert.equal(knockoutRounds(8), 3);
+  assert.equal(knockoutRounds(5), 3); // bracket de 8
+  assert.equal(knockoutRounds(2), 1);
+  assert.equal(knockoutRounds(1), 0);
+});
+
+test('cupRoundCount: só mata-mata (16 → 4 rodadas) e bloco máx', () => {
+  const rounds = cupRoundCount('knockout', 16);
+  assert.equal(rounds, 4);
+  // 30 jogos, 4 rodadas → bloco máx 7 (7×4 = 28)
+  assert.equal(maxCupBlock(rounds, 30), 7);
+});
+
+test('cupRoundCount: fase de grupos conta os confrontos do grupo', () => {
+  // 16 participantes, grupos de 4, passam 2 → 4 grupos → 8 classificados.
+  // grupo (turno de 4) = 3 rodadas + mata-mata (quartas→final) = 3 → 6.
+  const rounds = cupRoundCount('groups', 16, 4, 2);
+  assert.equal(rounds, 6);
+  // 20 jogos, 6 rodadas → bloco máx 3 (6×3 = 18)
+  assert.equal(maxCupBlock(rounds, 20), 3);
+});
+
+test('consolationBlockInfo: usa a sobra da Liga', () => {
+  // 80 jogos, Liga usou 70 → sobram 10; consolação com 2 rodadas → máx 5.
+  const info = consolationBlockInfo(2, 80, 70);
+  assert.equal(info.leftover, 10);
+  assert.equal(info.maxBlock, 5);
+  assert.equal(info.overlaps, false);
+});
+
+test('consolationBlockInfo: Liga consumiu tudo → sobrepõe o fim', () => {
+  // 80 jogos, Liga usou 80 → sem sobra; 3 rodadas → overlaps=true.
+  const info = consolationBlockInfo(3, 80, 80);
+  assert.equal(info.leftover, 0);
+  assert.equal(info.overlaps, true);
+  // bloco pequeno (ex.: 2) cabe: 3×2 = 6 jogos no fim.
+  assert.ok(info.maxBlock >= 2);
+  assert.ok(3 * info.maxBlock <= 80);
+});
+
+test('Copa/Consolação: rodadas × bloco máx nunca excede os jogos disponíveis', () => {
+  const cupR = cupRoundCount('groups', 16, 4, 2);
+  assert.ok(cupR * maxCupBlock(cupR, 20) <= 20);
+  const info = consolationBlockInfo(2, 80, 70);
+  assert.ok(2 * info.maxBlock <= info.leftover);
 });

@@ -82,6 +82,80 @@ export function maxBlockSize(numParticipants: number, totalGames: number): numbe
 }
 
 // ---------------------------------------------------------------------------
+// Copa e Consolação — nº de confrontos (rodadas) e bloco máximo de jogos
+// ---------------------------------------------------------------------------
+
+/**
+ * Nº de rodadas de um mata-mata de eliminação simples para `n` participantes
+ * (byes completam até a potência de 2). Ex.: 16→4, 8→3, 5→3, 2→1, 1→0.
+ * É quantos confrontos alguém joga até (e incluindo) a final.
+ */
+export function knockoutRounds(n: number): number {
+  if (n < 2) return 0;
+  let size = 1;
+  let r = 0;
+  while (size < n) {
+    size *= 2;
+    r++;
+  }
+  return r;
+}
+
+/**
+ * Nº TOTAL de confrontos (rodadas) da Copa — cada rodada soma um bloco de jogos.
+ *  - 'knockout': só o mata-mata → knockoutRounds(participantes).
+ *  - 'groups': rodadas da fase de grupos (turno único dentro do grupo) +
+ *    rodadas do mata-mata entre os classificados.
+ *
+ * Ex.: 16 participantes, só mata-mata → 4 rodadas.
+ *      16 participantes, grupos de 4, passam 2 → 4 grupos → 8 classificados:
+ *      fase de grupos = 3 rodadas (turno de 4) + mata-mata (quartas→final) = 3
+ *      → total 6 rodadas.
+ */
+export function cupRoundCount(
+  format: 'knockout' | 'groups',
+  numParticipants: number,
+  groupSize?: number,
+  qualifiersPerGroup?: number,
+): number {
+  if (format === 'knockout') return knockoutRounds(numParticipants);
+  const gs = Math.max(2, groupSize ?? 4);
+  const qpg = Math.max(1, qualifiersPerGroup ?? 2);
+  const numGroups = Math.max(1, Math.ceil(numParticipants / gs));
+  const groupPhaseRounds = roundRobinRounds(gs);
+  const qualifiers = numGroups * qpg;
+  return groupPhaseRounds + knockoutRounds(qualifiers);
+}
+
+/** Bloco máximo de jogos por confronto da Copa: ⌊jogos / rodadas da Copa⌋. */
+export function maxCupBlock(cupRounds: number, totalGames: number): number {
+  if (cupRounds <= 0) return 0;
+  return Math.floor(totalGames / cupRounds);
+}
+
+/**
+ * Bloco máximo (e se sobrepõe a Liga) da Copa da Consolação, que começa APÓS
+ * a Liga. Usa os jogos que sobram depois da Liga; se a Liga consumiu jogos
+ * demais, permite sobrepor o FIM da Liga (janela curta no final).
+ *
+ * Ex.: 80 jogos, Liga usou 70, Consolação com 2 rodadas → sobram 10 → máx 5.
+ *      80 jogos, Liga usou 80 → sem sobra → sobrepõe o fim (overlaps=true).
+ */
+export function consolationBlockInfo(
+  consolationRounds: number,
+  totalGames: number,
+  ligaGamesUsed: number,
+): { maxBlock: number; overlaps: boolean; leftover: number } {
+  if (consolationRounds <= 0) return { maxBlock: 0, overlaps: false, leftover: 0 };
+  const leftover = Math.max(0, totalGames - ligaGamesUsed);
+  if (leftover >= consolationRounds) {
+    return { maxBlock: Math.floor(leftover / consolationRounds), overlaps: false, leftover };
+  }
+  // Liga consumiu jogos demais → a Consolação sobrepõe o fim da competição.
+  return { maxBlock: Math.floor(totalGames / consolationRounds), overlaps: true, leftover };
+}
+
+// ---------------------------------------------------------------------------
 // Liga — round-robin (método do círculo)
 // ---------------------------------------------------------------------------
 
